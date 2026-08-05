@@ -9,7 +9,7 @@ function getCols() {
 }
 
 /**
- * Generates a full-width line of Matrix digital rain.
+ * Generates a line of Matrix digital rain.
  */
 function getMatrixLine(width) {
   let line = '';
@@ -26,26 +26,11 @@ function getMatrixLine(width) {
 }
 
 /**
- * Renders a high-tech cyber progress loading bar.
+ * Scrambles text with random cyber noise characters.
  */
-function renderProgressBar(percent, taskName) {
-  const barWidth = 35;
-  const completed = Math.floor((percent / 100) * barWidth);
-  const remaining = barWidth - completed;
-
-  const filledBar = chalk.bold.green('█'.repeat(completed));
-  const emptyBar = chalk.dim.gray('░'.repeat(remaining));
-  const pctStr = chalk.bold.cyan(`${String(percent).padStart(3, ' ')}%`);
-
-  return `  ${chalk.bold.yellow('[LOADING]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(taskName)}`;
-}
-
-/**
- * Scrambles target string with cyber noise characters.
- */
-function scrambleText(text, ratio = 1.0) {
+function scrambleText(text, ratio = 0.3) {
   return text.split('').map(ch => {
-    if (ch === ' ' || ch === '\n' || ch === '│' || ch === '┌' || ch === '┐' || ch === '└' || ch === '┘' || ch === '─') return ch;
+    if (ch === ' ' || ch === '\n' || ch === '│' || ch === '┌' || ch === '┐' || ch === '└' || ch === '┘' || ch === '─' || ch === '═' || ch === '╔' || ch === '╗' || ch === '╚' || ch === '╝') return ch;
     if (Math.random() < ratio) {
       return NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
     }
@@ -54,50 +39,11 @@ function scrambleText(text, ratio = 1.0) {
 }
 
 /**
- * Plays full-screen cyber hacker boot animation sequence.
+ * Renders full-screen live dashboard frame + 10-second bottom loading bar.
  */
 export async function playBootAnimation() {
   console.clear();
-  const width = Math.max(80, getCols() - 2);
-
-  // ─────────────────────────────────────────────────────────────
-  // Phase 1: Full-Screen Digital Matrix Rain Cascade
-  // ─────────────────────────────────────────────────────────────
-  for (let i = 0; i < 14; i++) {
-    console.log(getMatrixLine(width));
-    await sleep(40);
-  }
-  await sleep(150);
-  console.clear();
-
-  // ─────────────────────────────────────────────────────────────
-  // Phase 2: Cyber Workstation Frame & Slow Animated Loading Bar
-  // ─────────────────────────────────────────────────────────────
-  const border = '═'.repeat(Math.min(90, width - 4));
-  console.log(chalk.cyan(` ╔${border}╗`));
-  console.log(chalk.cyan(` ║  ${chalk.bold.green('MORENA CYBERSECURITY RECONNAISSANCE ENGINE v1.0.0')}              ║`));
-  console.log(chalk.cyan(` ╠${border}╣`));
-
-  const loadingTasks = [
-    { pct: 15, task: 'INITIALIZING KERNEL SUBSYSTEMS...' },
-    { pct: 35, task: 'CONNECTING PUPPETEER CHROMIUM ENGINE...' },
-    { pct: 55, task: 'MOUNTING DOM REWRITE & ASSET PIPELINE...' },
-    { pct: 75, task: 'LOADING OWASP SECURITY AUDITOR...' },
-    { pct: 90, task: 'ENGAGING SECRET & ENDPOINT SCANNER...' },
-    { pct: 100, task: 'SYSTEM FULLY ENGAGED & READY.' }
-  ];
-
-  for (const step of loadingTasks) {
-    process.stdout.write('\r' + renderProgressBar(step.pct, step.task));
-    await sleep(280);
-  }
-  console.log('\n' + chalk.cyan(` ╚${border}╝\n`));
-  await sleep(200);
-
-  // ─────────────────────────────────────────────────────────────
-  // Phase 3: Multi-Column ASCII Computer & Telemetry Dashboard
-  // ─────────────────────────────────────────────────────────────
-  console.clear();
+  const width = Math.max(85, getCols() - 2);
 
   const computerAscii = [
     ' ┌──────────────────┐ ',
@@ -130,12 +76,36 @@ export async function playBootAnimation() {
     '  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚══'
   ];
 
-  // Render combined dashboard layout line-by-line with text decryption effect
-  for (let frame = 8; frame >= 0; frame--) {
-    console.clear();
-    const ratio = frame / 8;
+  const loadingTasks = [
+    { from: 0, to: 20, task: 'INITIALIZING KERNEL SUBSYSTEMS...' },
+    { from: 20, to: 40, task: 'CONNECTING PUPPETEER CHROMIUM ENGINE...' },
+    { from: 40, to: 60, task: 'MOUNTING DOM REWRITE & ASSET PIPELINE...' },
+    { from: 60, to: 80, task: 'LOADING OWASP SECURITY AUDITOR...' },
+    { from: 80, to: 95, task: 'ENGAGING SECRET & ENDPOINT SCANNER...' },
+    { from: 95, to: 100, task: 'SYSTEM INITIALIZATION COMPLETE.' }
+  ];
 
+  const totalDurationMs = 10000; // Exactly 10 seconds
+  const tickIntervalMs = 100;    // 100ms per tick = 100 ticks total
+  const totalTicks = totalDurationMs / tickIntervalMs;
+
+  for (let tick = 0; tick <= totalTicks; tick++) {
+    console.clear();
+
+    const percent = Math.min(100, Math.floor((tick / totalTicks) * 100));
+
+    // Current task description
+    const currentTask = loadingTasks.find(t => percent >= t.from && percent <= t.to)?.task || 'INITIALIZING...';
+
+    // 1. Matrix Digital Rain Top Bar
+    console.log(getMatrixLine(width));
+    console.log(getMatrixLine(width));
+
+    // 2. Middle Workstation + Scrambled Banner + Telemetry Dashboard
     console.log(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
+
+    // Shimmer effect calculation
+    const shimmerRatio = percent < 90 ? Math.max(0.05, (100 - percent) / 200) : 0;
 
     for (let i = 0; i < Math.max(computerAscii.length, bannerLines.length); i++) {
       const pcLine = computerAscii[i] || '                      ';
@@ -143,16 +113,46 @@ export async function playBootAnimation() {
       const telLine = telemetryAscii[i] || '                        ';
 
       const pcStyled = chalk.bold.cyan(pcLine);
-      const bStyled = ratio === 0 ? chalk.bold.cyan(bLine) : chalk.green.bold(scrambleText(bLine, ratio));
+      const bStyled = shimmerRatio === 0 ? chalk.bold.cyan(bLine) : chalk.green.bold(scrambleText(bLine, shimmerRatio));
       const telStyled = chalk.bold.yellow(telLine);
 
       console.log(`${pcStyled}  ${bStyled}  ${telStyled}`);
     }
 
     console.log(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘'));
-    await sleep(40);
+
+    // 3. Matrix Digital Rain Middle Separator
+    console.log(getMatrixLine(width));
+
+    // 4. Fixed Bottom 10-Second Cyber Loading Bar
+    const barWidth = Math.max(25, Math.min(45, width - 45));
+    const completed = Math.floor((percent / 100) * barWidth);
+    const remaining = barWidth - completed;
+
+    const filledBar = chalk.bold.green('█'.repeat(completed));
+    const emptyBar = chalk.dim.gray('░'.repeat(remaining));
+    const pctStr = chalk.bold.cyan(`${String(percent).padStart(3, ' ')}%`);
+    const borderLine = '═'.repeat(Math.min(92, width - 4));
+
+    console.log(chalk.cyan(` ╔${borderLine}╗`));
+    console.log(` ║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(42, ' '))} ║`);
+    console.log(chalk.cyan(` ╚${borderLine}╝`));
+
+    await sleep(tickIntervalMs);
   }
 
-  console.log('\n' + chalk.bold.yellow('   MORENA REPL v1.0.0 - Authorized Security Reconnaissance & Asset Audit Tool'));
+  await sleep(200);
+  console.clear();
+
+  // Final REPL Header
+  console.log(chalk.bold.cyan(`
+   ███╗   ███╗ ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ 
+   ████╗ ████║██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗
+   ██╔████╔██║██║   ██║██████╔╝█████╗  ██╔██╗ ██║███████║
+   ██║╚██╔╝██║██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║██╔══██║
+   ██║ ╚═╝ ██║╚██████╔╝██║  ██║███████╗██║ ╚████║██║  ██║
+   ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝
+  `));
+  console.log(chalk.bold.yellow('   MORENA REPL v1.0.0 - Authorized Security Reconnaissance & Asset Audit Tool'));
   console.log(chalk.dim('   Type ') + chalk.bold.cyan('help') + chalk.dim(' to display available commands or ') + chalk.bold.cyan('exit-now') + chalk.dim(' to quit.\n'));
 }
