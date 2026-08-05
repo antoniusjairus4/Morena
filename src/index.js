@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-import { playBootAnimation } from './banner.js';
+import { playBootAnimation, displayHeaderDashboard } from './banner.js';
 import { startRepl } from './repl.js';
 
 async function main() {
   if (!process.env.MORENA_FAST) {
     await playBootAnimation();
   }
+  displayHeaderDashboard();
   startRepl();
 }
 

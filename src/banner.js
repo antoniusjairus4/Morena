@@ -42,6 +42,56 @@ function scrambleText(text, ratio = 0.3) {
   }).join('');
 }
 
+const computerAscii = [
+  ' ┌──────────────────┐ ',
+  ' │ ________________ │ ',
+  ' │ | MORENA CORE   || ',
+  ' │ | STATUS: OK    || ',
+  ' │ |________________|| ',
+  ' └───────┬─┬────────┘ ',
+  '  ┌──────┴─┴──────┐   ',
+  '  │ ░░░░░░░░░░░░░ │   ',
+  '  └───────────────┘   '
+];
+
+const telemetryAscii = [
+  ' ┌──[ TELEMETRY ]──────┐ ',
+  ' │ HOST: Kali Linux    │ ',
+  ' │ ENGINE: Puppeteer   │ ',
+  ' │ CRYPTO: AES-256     │ ',
+  ' │ SCANNER: Active     │ ',
+  ' │ STATUS: ARMED       │ ',
+  ' └─────────────────────┘ '
+];
+
+const bannerLines = [
+  '  ███╗   ███╗ ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ ',
+  '  ████╗ ████║██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗',
+  '  ██╔████╔██║██║   ██║██████╔╝█████╗  ██╔██╗ ██║███████║',
+  '  ██║╚██╔╝██║██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║██╔══██║',
+  '  ██║ ╚═╝ ██║╚██████╔╝██║  ██║███████╗██║ ╚████║██║  ██║',
+  '  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚══'
+];
+
+/**
+ * Displays the persistent computer workstation dashboard header.
+ */
+export function displayHeaderDashboard() {
+  console.log(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
+
+  for (let i = 0; i < Math.max(computerAscii.length, bannerLines.length); i++) {
+    const pcLine = computerAscii[i] || '                      ';
+    const bLine = bannerLines[i] || '                                                      ';
+    const telLine = telemetryAscii[i] || '                        ';
+
+    console.log(`${chalk.bold.cyan(pcLine)}  ${chalk.bold.cyan(bLine)}  ${chalk.bold.yellow(telLine)}`);
+  }
+
+  console.log(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘\n'));
+  console.log(chalk.bold.yellow(' MORENA REPL v1.0.0 - Authorized Security Reconnaissance & Asset Audit Tool'));
+  console.log(chalk.dim(' Type ') + chalk.bold.cyan('help') + chalk.dim(' to display available commands or ') + chalk.bold.cyan('exit-now') + chalk.dim(' to quit.\n'));
+}
+
 /**
  * Plays full-screen live dashboard frame + 10-second bottom loading bar.
  */
@@ -53,37 +103,6 @@ export async function playBootAnimation() {
     { from: 60, to: 80, task: 'LOADING OWASP SECURITY AUDITOR...' },
     { from: 80, to: 95, task: 'ENGAGING SECRET & ENDPOINT SCANNER...' },
     { from: 95, to: 100, task: 'SYSTEM INITIALIZATION COMPLETE.' }
-  ];
-
-  const computerAscii = [
-    ' ┌──────────────────┐ ',
-    ' │ ________________ │ ',
-    ' │ | MORENA CORE   || ',
-    ' │ | STATUS: OK    || ',
-    ' │ |________________|| ',
-    ' └───────┬─┬────────┘ ',
-    '  ┌──────┴─┴──────┐   ',
-    '  │ ░░░░░░░░░░░░░ │   ',
-    '  └───────────────┘   '
-  ];
-
-  const telemetryAscii = [
-    ' ┌──[ TELEMETRY ]──────┐ ',
-    ' │ HOST: Kali Linux    │ ',
-    ' │ ENGINE: Puppeteer   │ ',
-    ' │ CRYPTO: AES-256     │ ',
-    ' │ SCANNER: Active     │ ',
-    ' │ STATUS: ARMED       │ ',
-    ' └─────────────────────┘ '
-  ];
-
-  const bannerLines = [
-    '  ███╗   ███╗ ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ ',
-    '  ████╗ ████║██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗',
-    '  ██╔████╔██║██║   ██║██████╔╝█████╗  ██╔██╗ ██║███████║',
-    '  ██║╚██╔╝██║██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║██╔══██║',
-    '  ██║ ╚═╝ ██║╚██████╔╝██║  ██║███████╗██║ ╚████║██║  ██║',
-    '  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚══'
   ];
 
   const totalDurationMs = 10000; // Exactly 10 seconds
