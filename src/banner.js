@@ -73,6 +73,73 @@ const bannerLines = [
   '  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚══'
 ];
 
+let animationInterval = null;
+let animTick = 0;
+
+const pulseIcons = ['⚡', '🟢', '🔥', '🚀', '✨', '💎'];
+const statusTexts = ['STATUS: OK    ', 'STATUS: ARMED ', 'STATUS: ACTIVE', 'STATUS: READY '];
+
+/**
+ * Starts continuous live background animation for the ASCII header dashboard.
+ */
+export function startLiveHeaderAnimation() {
+  if (animationInterval || !process.stdout.isTTY) return;
+
+  animationInterval = setInterval(() => {
+    animTick++;
+    const icon = pulseIcons[animTick % pulseIcons.length];
+    const statusStr = statusTexts[animTick % statusTexts.length];
+
+    const currentPc = [
+      ' ┌──────────────────┐ ',
+      ' │ ________________ │ ',
+      ' │ | MORENA CORE   || ',
+      ` │ | ${statusStr} || `,
+      ' │ |________________|| ',
+      ' └───────┬─┬────────┘ ',
+      '  ┌──────┴─┴──────┐   ',
+      '  │ ░░░░░░░░░░░░░ │   ',
+      '  └───────────────┘   '
+    ];
+
+    const currentTel = [
+      ' ┌──[ TELEMETRY ]──────┐ ',
+      ' │ HOST: Kali Linux    │ ',
+      ' │ ENGINE: Puppeteer   │ ',
+      ' │ CRYPTO: AES-256     │ ',
+      ' │ SCANNER: Active     │ ',
+      ` │ STATUS: ARMED ${icon}   │ `,
+      ' └─────────────────────┘ '
+    ];
+
+    // Save cursor, jump to row 1 col 1, update header, restore cursor
+    process.stdout.write('\x1B[s\x1B[1;1H');
+    process.stdout.write(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐\n'));
+
+    for (let i = 0; i < Math.max(currentPc.length, bannerLines.length); i++) {
+      const pcLine = currentPc[i] || '                      ';
+      const bLine = bannerLines[i] || '                                                      ';
+      const telLine = currentTel[i] || '                        ';
+
+      const bStyled = animTick % 2 === 0 ? chalk.bold.cyan(bLine) : chalk.cyan(bLine);
+      process.stdout.write(`${chalk.bold.cyan(pcLine)}  ${bStyled}  ${chalk.bold.yellow(telLine)}\n`);
+    }
+
+    process.stdout.write(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘\n'));
+    process.stdout.write('\x1B[u');
+  }, 400);
+}
+
+/**
+ * Pauses background animation during long tasks.
+ */
+export function stopLiveHeaderAnimation() {
+  if (animationInterval) {
+    clearInterval(animationInterval);
+    animationInterval = null;
+  }
+}
+
 /**
  * Displays the persistent computer workstation dashboard header.
  */
@@ -154,7 +221,7 @@ export async function playBootAnimation() {
       chalk.cyan(` ╚${borderLine}╝`)
     ];
 
-    // 3. Fill available vertical space with live Matrix digital rain lines to push loading bar to physical terminal bottom
+    // 3. Fill available vertical space with live Matrix digital rain lines
     const usedLines = frameLines.length + loadingBarLines.length;
     const fillerRainLines = Math.max(1, rows - usedLines - 1);
 

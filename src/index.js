@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { playBootAnimation, displayHeaderDashboard } from './banner.js';
+import { playBootAnimation, displayHeaderDashboard, startLiveHeaderAnimation } from './banner.js';
 import { startRepl } from './repl.js';
 
 async function main() {
@@ -9,6 +9,7 @@ async function main() {
   }
   displayHeaderDashboard();
   startRepl();
+  startLiveHeaderAnimation();
 }
 
 main().catch(console.error);
