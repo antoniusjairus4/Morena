@@ -127,6 +127,12 @@ async function getDefaultOutputPath(prefix = 'morena-dump') {
 }
 
 /**
+ * Cyberpunk Dock Header & Prompt String.
+ */
+const cyberDockHeader = chalk.bold.green(' ┌──[ ') + chalk.bold.yellow('⚡ MORENA // CYBER COMMAND DOCK') + chalk.bold.green(' ]' + '─'.repeat(38) + '┐');
+const cyberPromptStr = chalk.bold.green(' │ ') + chalk.bold.cyan('morena@kali') + chalk.bold.yellow(' ❯ ');
+
+/**
  * Main REPL Command Router and Prompt Loop.
  */
 export function startRepl() {
@@ -135,20 +141,25 @@ export function startRepl() {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: chalk.bold.cyan('morena > ')
+    prompt: cyberPromptStr
   });
+
+  const promptUser = () => {
+    console.log(cyberDockHeader);
+    rl.prompt();
+  };
 
   rl.on('SIGINT', () => {
     console.log(chalk.yellow('\n[-] Use \'exit-now\' to quit Morena.'));
-    rl.prompt();
+    promptUser();
   });
 
-  rl.prompt();
+  promptUser();
 
   rl.on('line', async (line) => {
     const input = line.trim();
     if (!input) {
-      rl.prompt();
+      promptUser();
       return;
     }
 
@@ -1039,7 +1050,7 @@ export function startRepl() {
     }
 
     process.stdin.resume();
-    rl.prompt();
+    promptUser();
   });
 
   rl.on('close', () => {
