@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import * as cheerio from 'cheerio';
 
 /**
- * Detects if DOM HTML contains a login form or password input fields.
+ * Detects if DOM HTML contains a login form, password fields, or login/auth buttons/links.
  * @param {string} html 
  * @returns {boolean}
  */
@@ -11,8 +11,10 @@ export function detectLoginForm(html) {
   if (!html) return false;
   const $ = cheerio.load(html);
 
+  // 1. Check for password inputs
   if ($('input[type="password"]').length > 0) return true;
 
+  // 2. Check for login forms
   let found = false;
   $('form').each((_, form) => {
     const text = $(form).text().toLowerCase();
@@ -25,6 +27,22 @@ export function detectLoginForm(html) {
       id.includes('login') || id.includes('signin') || id.includes('auth') ||
       cls.includes('login') || cls.includes('signin') || cls.includes('auth') ||
       text.includes('sign in') || text.includes('log in') || text.includes('password')
+    ) {
+      found = true;
+    }
+  });
+  if (found) return true;
+
+  // 3. Check for login/signin buttons or links
+  const authRegex = /^(sign in|log in|login|signin|sign-in|log-in)$/i;
+  $('button, a, input[type="button"], input[type="submit"]').each((_, el) => {
+    const text = $(el).text().trim();
+    const val = ($(el).attr('value') || '').trim();
+    const href = ($(el).attr('href') || '').trim();
+
+    if (
+      authRegex.test(text) || authRegex.test(val) ||
+      href.includes('login') || href.includes('signin')
     ) {
       found = true;
     }
