@@ -1,0 +1,30 @@
+{
+  "name": "morena",
+  "version": "1.0.0",
+  "description": "CLI tool for web scraping and packaging frontend assets into compressed archives",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "morena": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "cli",
+    "scraper",
+    "puppeteer",
+    "archiver",
+    "frontend-audit"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "archiver": "^6.0.1",
+    "chalk": "^5.3.0",
+    "cheerio": "^1.0.0-rc.12",
+    "commander": "^12.0.0",
+    "ora": "^8.0.1",
+    "puppeteer": "^22.6.0"
+  }
+}
