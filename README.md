@@ -158,6 +158,50 @@ morena
 
 ---
 
+## 📖 Security Audit Execution Example
+
+```text
+morena > target palindrome.antoniusjairus.in
+[+] Target identified and locked: https://palindrome.antoniusjairus.in/
+
+morena > tech-stack
+Technology Stack Fingerprints for https://palindrome.antoniusjairus.in/:
+  Frameworks:       React.js, Next.js
+  UI Libraries:     Tailwind CSS
+  Server Headers:   Server: Vercel
+
+morena > audit
+OWASP Security Headers Audit for https://palindrome.antoniusjairus.in/:
+ [FAIL] Content-Security-Policy: Missing
+         ➜ Implement CSP to mitigate XSS and data injection attacks.
+ [PASS] Strict-Transport-Security: max-age=31536000; includeSubDomains
+         ➜ HSTS is enabled.
+ [WARN] X-Frame-Options: Missing
+         ➜ Set X-Frame-Options to DENY or SAMEORIGIN to prevent Clickjacking.
+
+morena > secrets
+Secret & Sensitive Pattern Scanner Results (2 findings):
+  1. [Developer TODO/FIXME Comment] app.js (line 42)
+     // TODO: Fix authentication fallback token before deployment
+  2. [Internal IP Address] config.js (line 108)
+     172.16.0.2
+
+morena > endpoints
+Extracted API Routes & Connections for https://palindrome.antoniusjairus.in/:
+  REST / API Routes (4):
+    • /api/v1/auth/login
+    • /api/v1/user/profile
+    • /api/v1/transactions
+    • /api/v1/analytics
+
+morena > report
+✔ Security audit report generated!
+Location: /home/jairus/Downloads/morena-report-2026-08-05.html
+Summary:  2 Header Failures; 2 Secret Findings
+```
+
+---
+
 ## 🛡️ Legal & Security Notice
 
 > [!WARNING]
