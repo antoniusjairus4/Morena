@@ -9,7 +9,7 @@ import * as cheerio from 'cheerio';
  * 
  * @param {string} rawHtml - DOM HTML string.
  * @param {string} pageUrl - Base URL of the page.
- * @returns {Promise<{ stagingDir: string, assetCount: number }>}
+ * @returns {Promise<{ stagingDir: string, assetCount: number, fileList: string[] }>}
  */
 export async function downloadAndStageAssets(rawHtml, pageUrl) {
   const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morena-dump-'));
@@ -17,6 +17,7 @@ export async function downloadAndStageAssets(rawHtml, pageUrl) {
   const baseUrl = new URL(pageUrl);
 
   const assetsToDownload = [];
+  const relativePaths = ['index.html'];
   let assetCounter = 0;
 
   // Utility to register asset for download & relative rewriting
@@ -52,6 +53,8 @@ export async function downloadAndStageAssets(rawHtml, pageUrl) {
           url: absoluteUrl,
           localPath: localStagingPath
         });
+
+        relativePaths.push(relativeLocalPath);
       } catch {
         // Skip invalid URL references gracefully
       }
@@ -91,6 +94,7 @@ export async function downloadAndStageAssets(rawHtml, pageUrl) {
 
   return {
     stagingDir,
-    assetCount: assetsToDownload.length
+    assetCount: assetsToDownload.length,
+    fileList: relativePaths
   };
 }

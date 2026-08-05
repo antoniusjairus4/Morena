@@ -7,6 +7,7 @@ class SessionManager {
     this.lockedAt = null;
     this.scrapedData = null;
     this.stagingDir = null;
+    this.scrapedFilesList = [];
     this.timeoutSeconds = 30;
     this.commandHistory = [];
   }
@@ -18,6 +19,7 @@ class SessionManager {
   lockTarget(urlObj) {
     this.targetUrl = urlObj;
     this.lockedAt = new Date();
+    this.scrapedFilesList = [];
   }
 
   getDuration() {
@@ -47,7 +49,6 @@ class SessionManager {
     if (this.stagingDir) {
       await cleanupStaging(this.stagingDir);
       this.stagingDir = null;
-      this.scrapedData = null;
     }
   }
 
@@ -56,6 +57,7 @@ class SessionManager {
     this.targetUrl = null;
     this.lockedAt = null;
     this.scrapedData = null;
+    this.scrapedFilesList = [];
     this.commandHistory = [];
   }
 }

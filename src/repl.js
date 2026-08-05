@@ -12,27 +12,46 @@ import { downloadAndStageAssets } from './assetManager.js';
 import { createZipArchive } from './archiver.js';
 
 /**
- * Creates directory tree display for staged files.
+ * Builds a nested tree object from relative file paths.
  */
-async function printDirectoryTree(dir, prefix = '') {
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      const isLast = i === entries.length - 1;
-      const connector = isLast ? '└── ' : '├── ';
-      const subPrefix = isLast ? '    ' : '│   ';
-
-      if (entry.isDirectory()) {
-        console.log(`${prefix}${connector}${chalk.cyan.bold(entry.name + '/')}`);
-        await printDirectoryTree(path.join(dir, entry.name), prefix + subPrefix);
+function buildTreeObject(filePaths) {
+  const root = {};
+  for (const fp of filePaths) {
+    const parts = fp.split(/[/\\]+/).filter(Boolean);
+    let current = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (i === parts.length - 1) {
+        current[part] = null; // Leaf file node
       } else {
-        console.log(`${prefix}${connector}${chalk.green(entry.name)}`);
+        if (!current[part]) {
+          current[part] = {};
+        }
+        current = current[part];
       }
     }
-  } catch (err) {
-    console.log(chalk.red(`Error reading directory: ${err.message}`));
   }
+  return root;
+}
+
+/**
+ * Prints hierarchical ASCII tree structure with chalk colors.
+ */
+function printHierarchicalTree(node, prefix = '') {
+  const keys = Object.keys(node);
+  keys.forEach((key, index) => {
+    const isLast = index === keys.length - 1;
+    const connector = isLast ? '└── ' : '├── ';
+    const childPrefix = isLast ? '    ' : '│   ';
+    const isDirectory = node[key] !== null;
+
+    if (isDirectory) {
+      console.log(`${prefix}${connector}${chalk.cyan.bold(key + '/')}`);
+      printHierarchicalTree(node[key], prefix + childPrefix);
+    } else {
+      console.log(`${prefix}${connector}${chalk.green(key)}`);
+    }
+  });
 }
 
 /**
@@ -102,14 +121,19 @@ export function startRepl() {
         }
 
         case 'show': {
-          if (!session.isLocked() || !session.stagingDir) {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No active target session. Use \'target <url>\' first.'));
+          } else if (!session.scrapedFilesList || session.scrapedFilesList.length === 0) {
             console.log(
-              chalk.yellow('[-] No active target or scraped data found. Use \'target <url>\' first, then run \'take\'.')
+              chalk.yellow(
+                `[-] No scraped data found for ${session.targetUrl.href}. Run 'take' first to capture frontend assets.`
+              )
             );
           } else {
-            console.log(chalk.bold.underline(`\nDiscovered Structure for ${session.targetUrl.href}:`));
-            console.log(chalk.cyan.bold('/ (staging root)'));
-            await printDirectoryTree(session.stagingDir);
+            console.log(chalk.bold.underline(`\nHierarchical Asset Tree for ${session.targetUrl.href}:`));
+            console.log(chalk.cyan.bold('/ (scraped root)'));
+            const treeObj = buildTreeObject(session.scrapedFilesList);
+            printHierarchicalTree(treeObj);
             console.log('');
           }
           break;
@@ -131,6 +155,7 @@ export function startRepl() {
             const staged = await downloadAndStageAssets(html, pageUrl);
             session.stagingDir = staged.stagingDir;
             session.scrapedData = staged;
+            session.scrapedFilesList = staged.fileList;
             spinner.succeed(`Downloaded ${chalk.bold(staged.assetCount)} frontend asset dependencies`);
 
             // Interactive prompt for saving archive destination
@@ -235,12 +260,16 @@ export function startRepl() {
             console.log(`  ${chalk.dim('Timeout Limit:')}    ${session.timeoutSeconds} seconds`);
             console.log(
               `  ${chalk.dim('Scraped Assets:')}   ${
-                session.scrapedData ? session.scrapedData.assetCount : 'Not yet scraped (use \'take\')'
+                session.scrapedFilesList && session.scrapedFilesList.length > 0
+                  ? `${session.scrapedFilesList.length} file(s)`
+                  : 'Not yet scraped (use \'take\')'
               }`
             );
             console.log(
               `  ${chalk.dim('Staging Status:')}   ${
-                session.stagingDir ? session.stagingDir : 'Cleaned / Archived'
+                session.scrapedFilesList && session.scrapedFilesList.length > 0
+                  ? 'Archived & Saved to Downloads'
+                  : 'Idle'
               }`
             );
             console.log(chalk.bold.cyan('└──────────────────────────────────────────────────────────┘\n'));
@@ -262,6 +291,7 @@ export function startRepl() {
 
         case 'clean': {
           await session.cleanStaging();
+          session.scrapedFilesList = [];
           console.log(chalk.green('[+] Staging directory and temporary caches cleared.'));
           break;
         }
@@ -303,7 +333,7 @@ export function startRepl() {
         case 'help': {
           console.log(chalk.bold.cyan('\nAvailable Morena Commands:'));
           console.log(`  ${chalk.yellow('target <url>')}       - Lock active session target URL`);
-          console.log(`  ${chalk.yellow('show')}               - List discovered files & asset folder tree`);
+          console.log(`  ${chalk.yellow('show')}               - Display hierarchical tree of scraped files`);
           console.log(`  ${chalk.yellow('take')}               - Scrape DOM, assets & archive to specified zip path`);
           console.log(`  ${chalk.yellow('scession -time')}     - Display session duration since lock`);
           console.log(`  ${chalk.yellow('headers')}            - Fetch target HTTP response headers`);
