@@ -10,16 +10,31 @@ class SessionManager {
     this.scrapedFilesList = [];
     this.timeoutSeconds = 30;
     this.commandHistory = [];
+    this.cookies = [];
+    this.discoveredUrls = [];
   }
 
   isLocked() {
     return this.targetUrl !== null;
   }
 
+  isAuthenticated() {
+    return this.cookies.length > 0;
+  }
+
   lockTarget(urlObj) {
     this.targetUrl = urlObj;
     this.lockedAt = new Date();
     this.scrapedFilesList = [];
+    this.discoveredUrls = [];
+  }
+
+  setCookies(cookieArray) {
+    this.cookies = cookieArray || [];
+  }
+
+  setDiscoveredUrls(urls) {
+    this.discoveredUrls = urls || [];
   }
 
   getDuration() {
@@ -59,6 +74,8 @@ class SessionManager {
     this.scrapedData = null;
     this.scrapedFilesList = [];
     this.commandHistory = [];
+    this.cookies = [];
+    this.discoveredUrls = [];
   }
 }
 

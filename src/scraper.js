@@ -6,9 +6,11 @@ import fs from 'fs/promises';
  * and extracts the final runtime DOM HTML.
  * 
  * @param {string} targetUrl - The target URL to navigate to.
+ * @param {number} timeoutSeconds - Page load timeout in seconds.
+ * @param {object[]} cookies - Optional Puppeteer cookies to inject before navigation.
  * @returns {Promise<{ html: string, pageUrl: string }>}
  */
-export async function scrapeDOM(targetUrl, timeoutSeconds = 30) {
+export async function scrapeDOM(targetUrl, timeoutSeconds = 30, cookies = []) {
   let browser;
   try {
     // Launch Puppeteer with system Chrome executable or fallback to default
@@ -43,6 +45,11 @@ export async function scrapeDOM(targetUrl, timeoutSeconds = 30) {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     );
 
+    // Inject session cookies if provided
+    if (cookies.length > 0) {
+      await page.setCookie(...cookies);
+    }
+
     // Navigate to URL and wait until network is idle (networkidle2)
     const response = await page.goto(targetUrl, {
       waitUntil: 'networkidle2',
@@ -64,7 +71,7 @@ export async function scrapeDOM(targetUrl, timeoutSeconds = 30) {
     return { html, pageUrl: finalUrl };
   } catch (error) {
     if (error.name === 'TimeoutError') {
-      throw new Error(`Navigation timed out after 30 seconds while loading ${targetUrl}`);
+      throw new Error(`Navigation timed out after ${timeoutSeconds} seconds while loading ${targetUrl}`);
     }
     throw error;
   } finally {
