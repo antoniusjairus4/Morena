@@ -13,6 +13,11 @@ import { downloadAndStageAssets } from './assetManager.js';
 import { createZipArchive } from './archiver.js';
 import { performLogin, interactiveLogin, detectLoginForm } from './auth.js';
 import { discoverUrls, crawlPages } from './crawler.js';
+import { analyzeTechStack } from './analyzer/techStack.js';
+import { scanForSecrets } from './analyzer/secretsScanner.js';
+import { extractEndpoints } from './analyzer/endpointExtractor.js';
+import { auditSecurityHeaders } from './analyzer/headerAuditor.js';
+import { generateReport } from './reporter.js';
 
 /**
  * Builds a nested tree object from relative file paths.
@@ -749,6 +754,185 @@ export function startRepl() {
         }
 
         // ──────────────────────────────────────────────
+        // TECH-STACK
+        // ──────────────────────────────────────────────
+        case 'tech-stack': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+          const spinner = ora('Fingerprinting target technology stack...').start();
+          try {
+            const res = await fetch(session.targetUrl.href, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+            });
+            const html = await res.text();
+            const tech = analyzeTechStack(html, res.headers);
+            spinner.stop();
+
+            console.log(chalk.bold.underline(`\nTechnology Stack Fingerprints for ${session.targetUrl.href}:`));
+            console.log(`  ${chalk.dim('Frameworks:')}       ${tech.frameworks.length ? chalk.cyan(tech.frameworks.join(', ')) : chalk.dim('None detected')}`);
+            console.log(`  ${chalk.dim('UI Libraries:')}     ${tech.uiLibraries.length ? chalk.cyan(tech.uiLibraries.join(', ')) : chalk.dim('None detected')}`);
+            console.log(`  ${chalk.dim('Analytics/CDNs:')}   ${tech.analytics.length ? chalk.cyan(tech.analytics.join(', ')) : chalk.dim('None detected')}`);
+            console.log(`  ${chalk.dim('Server Headers:')}    ${tech.servers.length ? chalk.cyan(tech.servers.join(' | ')) : chalk.dim('None detected')}`);
+            if (tech.metaTools.length) console.log(`  ${chalk.dim('Meta Generator:')}   ${chalk.yellow(tech.metaTools.join(', '))}`);
+            console.log('');
+          } catch (err) {
+            spinner.fail(chalk.red('Tech stack fingerprinting failed.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
+        // AUDIT (OWASP Headers)
+        // ──────────────────────────────────────────────
+        case 'audit': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+          const spinner = ora('Auditing OWASP security headers...').start();
+          try {
+            const res = await fetch(session.targetUrl.href, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+            });
+            const auditResults = auditSecurityHeaders(res.headers);
+            spinner.stop();
+
+            console.log(chalk.bold.underline(`\nOWASP Security Headers Audit for ${session.targetUrl.href}:`));
+            auditResults.forEach(item => {
+              let badge = chalk.bgGreen.black(` [PASS] `);
+              if (item.status === 'WARN') badge = chalk.bgYellow.black(` [WARN] `);
+              if (item.status === 'FAIL') badge = chalk.bgRed.white.bold(` [FAIL] `);
+              console.log(`${badge} ${chalk.bold(item.header)}: ${chalk.dim(item.value)}`);
+              console.log(`         ${chalk.dim('➜')} ${chalk.yellow(item.recommendation)}`);
+            });
+            console.log('');
+          } catch (err) {
+            spinner.fail(chalk.red('Header audit failed.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
+        // SECRETS
+        // ──────────────────────────────────────────────
+        case 'secrets': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+          const spinner = ora('Scanning scraped assets & DOM for sensitive keys & tokens...').start();
+          try {
+            let targetInput = session.stagingDir;
+            if (!targetInput) {
+              const res = await fetch(session.targetUrl.href, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+              });
+              targetInput = await res.text();
+            }
+
+            const findings = await scanForSecrets(targetInput);
+            spinner.stop();
+
+            console.log(chalk.bold.underline(`\nSecret & Sensitive Pattern Scanner Results (${findings.length} findings):`));
+            if (findings.length === 0) {
+              console.log(chalk.green('  [+] No exposed secret patterns detected in target content.'));
+            } else {
+              findings.forEach((f, i) => {
+                console.log(`  ${chalk.dim(i + 1 + '.')} ${chalk.red.bold(`[${f.type}]`)} ${chalk.cyan(f.file)} (line ${f.line})`);
+                console.log(`     ${chalk.yellow(f.match)}`);
+              });
+            }
+            console.log('');
+          } catch (err) {
+            spinner.fail(chalk.red('Secrets scan failed.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
+        // ENDPOINTS
+        // ──────────────────────────────────────────────
+        case 'endpoints': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+          const spinner = ora('Extracting API routes and WebSockets from JavaScript assets...').start();
+          try {
+            let targetInput = session.stagingDir;
+            if (!targetInput) {
+              const res = await fetch(session.targetUrl.href, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+              });
+              targetInput = await res.text();
+            }
+
+            const extracted = await extractEndpoints(targetInput);
+            spinner.stop();
+
+            console.log(chalk.bold.underline(`\nExtracted API Routes & Connections for ${session.targetUrl.href}:`));
+            console.log(`  ${chalk.bold('REST / API Routes')} (${extracted.restRoutes.length}):`);
+            extracted.restRoutes.slice(0, 15).forEach(r => console.log(`    ${chalk.dim('•')} ${chalk.cyan(r)}`));
+            if (extracted.restRoutes.length > 15) console.log(chalk.dim(`    ... and ${extracted.restRoutes.length - 15} more.`));
+
+            if (extracted.sockets.length > 0) {
+              console.log(`  ${chalk.bold('WebSockets Connections')} (${extracted.sockets.length}):`);
+              extracted.sockets.forEach(ws => console.log(`    ${chalk.dim('•')} ${chalk.yellow(ws)}`));
+            }
+            console.log('');
+          } catch (err) {
+            spinner.fail(chalk.red('Endpoint extraction failed.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
+        // REPORT
+        // ──────────────────────────────────────────────
+        case 'report': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+          const spinner = ora('Compiling reconnaissance & security assessment report...').start();
+          try {
+            const res = await fetch(session.targetUrl.href, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+            });
+            const html = await res.text();
+
+            const techStack = analyzeTechStack(html, res.headers);
+            const audit = auditSecurityHeaders(res.headers);
+            const secrets = await scanForSecrets(session.stagingDir || html);
+            const endpoints = await extractEndpoints(session.stagingDir || html);
+
+            const reportResult = await generateReport({
+              targetUrl: session.targetUrl.href,
+              duration: session.getDuration(),
+              techStack,
+              audit,
+              secrets,
+              endpoints,
+              scrapedFilesCount: session.scrapedFilesList ? session.scrapedFilesList.length : 0
+            });
+
+            spinner.succeed(chalk.green.bold(`[+] Security audit report generated!`));
+            console.log(`${chalk.dim('Location:')} ${chalk.cyan(reportResult.outputPath)}`);
+            console.log(`${chalk.dim('Summary:')}  ${chalk.red(`${reportResult.failCount} Header Failures`)}; ${chalk.yellow(`${reportResult.secretsCount} Secret Findings`)}\n`);
+          } catch (err) {
+            spinner.fail(chalk.red('Report generation failed.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
         // STATUS
         // ──────────────────────────────────────────────
         case 'status': {
@@ -817,6 +1001,12 @@ export function startRepl() {
           console.log(`  ${chalk.yellow('take')}               - Scrape current page (with page selector if routes found)`);
           console.log(`  ${chalk.yellow('take -all')}          - Scrape current page + ALL discovered routes`);
           console.log(`  ${chalk.yellow('show')}               - Display hierarchical tree of scraped files`);
+          console.log(chalk.dim('  ── Security Recon & Auditing ──'));
+          console.log(`  ${chalk.yellow('tech-stack')}         - Fingerprint frameworks, libraries, CDNs, & servers`);
+          console.log(`  ${chalk.yellow('secrets')}            - Scan scraped JS assets for leaked keys, tokens, & comments`);
+          console.log(`  ${chalk.yellow('endpoints')}          - Extract hidden REST API routes & WebSockets from JS`);
+          console.log(`  ${chalk.yellow('audit')}              - Audit response headers against OWASP guidelines`);
+          console.log(`  ${chalk.yellow('report')}             - Generate formatted HTML security audit report`);
           console.log(chalk.dim('  ── Utilities ──'));
           console.log(`  ${chalk.yellow('headers')}            - Fetch target HTTP response headers`);
           console.log(`  ${chalk.yellow('status')}             - Ping target URL for HTTP status`);
