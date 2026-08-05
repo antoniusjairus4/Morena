@@ -8,7 +8,7 @@ import fs from 'fs/promises';
  * @param {string} targetUrl - The target URL to navigate to.
  * @returns {Promise<{ html: string, pageUrl: string }>}
  */
-export async function scrapeDOM(targetUrl) {
+export async function scrapeDOM(targetUrl, timeoutSeconds = 30) {
   let browser;
   try {
     // Launch Puppeteer with system Chrome executable or fallback to default
@@ -46,7 +46,7 @@ export async function scrapeDOM(targetUrl) {
     // Navigate to URL and wait until network is idle (networkidle2)
     const response = await page.goto(targetUrl, {
       waitUntil: 'networkidle2',
-      timeout: 30000
+      timeout: timeoutSeconds * 1000
     });
 
     if (!response) {
