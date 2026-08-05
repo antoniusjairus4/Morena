@@ -230,17 +230,17 @@ export function startRepl() {
 
           const waitForContinue = () => {
             return new Promise((resolve) => {
+              rl.pause();
+              process.stdout.write(chalk.bold.yellow('\nType \'continue\' when you have logged in: '));
               const handler = (data) => {
                 const input = data.toString().trim().toLowerCase();
-                if (input === 'continue') {
+                if (input.includes('continue')) {
                   process.stdin.removeListener('data', handler);
                   resolve();
                 }
               };
-              process.stdin.setRawMode(false);
               process.stdin.resume();
               process.stdin.on('data', handler);
-              process.stdout.write(chalk.bold.yellow('\nType \'continue\' when you have logged in: '));
             });
           };
 

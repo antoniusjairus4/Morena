@@ -231,11 +231,34 @@ export async function interactiveLogin(targetUrl, waitForContinue, timeoutSecond
     // Wait for user to manually log in and type 'continue'
     await waitForContinue();
 
-    // Small delay to ensure page state is settled
-    await new Promise(r => setTimeout(r, 1500));
+    // Small delay to ensure session tokens/cookies are written to storage
+    await new Promise(r => setTimeout(r, 2000));
 
-    const cookies = await page.cookies();
-    return { cookies, success: cookies.length > 0 };
+    // Capture cookies from all active browser targets
+    const pages = await browser.pages();
+    let allCookies = [];
+    for (const p of pages) {
+      try {
+        const c = await p.cookies();
+        allCookies = allCookies.concat(c);
+      } catch {
+        // ignore closed pages
+      }
+    }
+
+    // Fallback: also try page.cookies() directly
+    if (allCookies.length === 0) {
+      allCookies = await page.cookies();
+    }
+
+    // Deduplicate cookies by name and domain
+    const uniqueMap = new Map();
+    for (const c of allCookies) {
+      uniqueMap.set(`${c.name}_${c.domain}`, c);
+    }
+    const finalCookies = Array.from(uniqueMap.values());
+
+    return { cookies: finalCookies, success: finalCookies.length > 0 };
   } catch (error) {
     return { cookies: [], success: false, error: error.message };
   } finally {
