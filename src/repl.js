@@ -262,16 +262,18 @@ export function startRepl() {
 
           const waitForContinue = () => {
             return new Promise((resolve) => {
-              rl.pause();
-              process.stdout.write(chalk.bold.yellow('\nType \'continue\' when you have logged in: '));
+              process.stdout.write(chalk.bold.yellow('\nPress ENTER or type \'continue\' when you have logged in in the browser window... '));
+              
+              if (process.stdin.isTTY) process.stdin.setRawMode(false);
+              process.stdin.resume();
+
               const handler = (data) => {
                 const input = data.toString().trim().toLowerCase();
-                if (input.includes('continue')) {
+                if (input.includes('continue') || input === '' || data.toString().includes('\r') || data.toString().includes('\n')) {
                   process.stdin.removeListener('data', handler);
                   resolve();
                 }
               };
-              process.stdin.resume();
               process.stdin.on('data', handler);
             });
           };
@@ -465,23 +467,25 @@ export function startRepl() {
                   }
                 }
               } else if (authChoice === 'manual_login') {
-                console.log(chalk.cyan('[*] Opening browser window... Log in manually, then type \'continue\' here.'));
+                console.log(chalk.cyan('[*] Opening browser window... Log in manually, then press ENTER or type \'continue\' here.'));
+                rl.pause();
                 const waitForContinue = () => {
                   return new Promise((resolve) => {
+                    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+                    process.stdin.resume();
+                    process.stdout.write(chalk.bold.yellow('\nPress ENTER or type \'continue\' when you have logged in in the browser window... '));
                     const handler = (data) => {
                       const input = data.toString().trim().toLowerCase();
-                      if (input === 'continue') {
+                      if (input.includes('continue') || input === '' || data.toString().includes('\r') || data.toString().includes('\n')) {
                         process.stdin.removeListener('data', handler);
                         resolve();
                       }
                     };
-                    process.stdin.setRawMode(false);
-                    process.stdin.resume();
                     process.stdin.on('data', handler);
-                    process.stdout.write(chalk.bold.yellow('\nType \'continue\' when you have logged in: '));
                   });
                 };
                 const loginRes = await interactiveLogin(session.targetUrl.href, waitForContinue, session.timeoutSeconds);
+                rl.resume();
                 if (loginRes.success) {
                   session.setCookies(loginRes.cookies);
                   console.log(chalk.green.bold(`[+] Session captured from browser. ${loginRes.cookies.length} cookies stored.`));
