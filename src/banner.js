@@ -9,7 +9,7 @@ function getRows() {
 }
 
 function getCols() {
-  return process.stdout.columns || 90;
+  return process.stdout.columns || 110;
 }
 
 /**
@@ -80,7 +80,15 @@ const pulseIcons = ['⚡', '🟢', '🔥', '🚀', '✨', '💎'];
 const statusTexts = ['STATUS: OK    ', 'STATUS: ARMED ', 'STATUS: ACTIVE', 'STATUS: READY '];
 
 /**
- * Starts continuous live background animation for the ASCII header dashboard.
+ * Calculates horizontal left margin for centering.
+ */
+function getCenterPadding(contentWidth) {
+  const cols = getCols();
+  return ' '.repeat(Math.max(0, Math.floor((cols - contentWidth) / 2)));
+}
+
+/**
+ * Starts continuous live background animation for the centered ASCII header dashboard.
  */
 export function startLiveHeaderAnimation() {
   if (animationInterval || !process.stdout.isTTY) return;
@@ -89,6 +97,7 @@ export function startLiveHeaderAnimation() {
     animTick++;
     const icon = pulseIcons[animTick % pulseIcons.length];
     const statusStr = statusTexts[animTick % statusTexts.length];
+    const pad = getCenterPadding(108);
 
     const currentPc = [
       ' ┌──────────────────┐ ',
@@ -112,9 +121,8 @@ export function startLiveHeaderAnimation() {
       ' └─────────────────────┘ '
     ];
 
-    // Save cursor, jump to row 1 col 1, update header, restore cursor
     process.stdout.write('\x1B[s\x1B[1;1H');
-    process.stdout.write(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐\n'));
+    process.stdout.write(pad + chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐\n'));
 
     for (let i = 0; i < Math.max(currentPc.length, bannerLines.length); i++) {
       const pcLine = currentPc[i] || '                      ';
@@ -122,17 +130,14 @@ export function startLiveHeaderAnimation() {
       const telLine = currentTel[i] || '                        ';
 
       const bStyled = animTick % 2 === 0 ? chalk.bold.cyan(bLine) : chalk.cyan(bLine);
-      process.stdout.write(`${chalk.bold.cyan(pcLine)}  ${bStyled}  ${chalk.bold.yellow(telLine)}\n`);
+      process.stdout.write(`${pad}${chalk.bold.cyan(pcLine)}  ${bStyled}  ${chalk.bold.yellow(telLine)}\n`);
     }
 
-    process.stdout.write(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘\n'));
+    process.stdout.write(pad + chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘\n'));
     process.stdout.write('\x1B[u');
   }, 400);
 }
 
-/**
- * Pauses background animation during long tasks.
- */
 export function stopLiveHeaderAnimation() {
   if (animationInterval) {
     clearInterval(animationInterval);
@@ -141,22 +146,30 @@ export function stopLiveHeaderAnimation() {
 }
 
 /**
- * Displays the persistent computer workstation dashboard header.
+ * Displays the persistent horizontally centered computer workstation dashboard header.
  */
 export function displayHeaderDashboard() {
-  console.log(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
+  const pad = getCenterPadding(108);
+
+  console.log(pad + chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
 
   for (let i = 0; i < Math.max(computerAscii.length, bannerLines.length); i++) {
     const pcLine = computerAscii[i] || '                      ';
     const bLine = bannerLines[i] || '                                                      ';
     const telLine = telemetryAscii[i] || '                        ';
 
-    console.log(`${chalk.bold.cyan(pcLine)}  ${chalk.bold.cyan(bLine)}  ${chalk.bold.yellow(telLine)}`);
+    console.log(`${pad}${chalk.bold.cyan(pcLine)}  ${chalk.bold.cyan(bLine)}  ${chalk.bold.yellow(telLine)}`);
   }
 
-  console.log(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘\n'));
-  console.log(chalk.bold.yellow(' MORENA REPL v1.0.0 - Authorized Security Reconnaissance & Asset Audit Tool'));
-  console.log(chalk.dim(' Type ') + chalk.bold.cyan('help') + chalk.dim(' to display available commands or ') + chalk.bold.cyan('exit-now') + chalk.dim(' to quit.\n'));
+  console.log(pad + chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘\n'));
+  
+  const titleStr = 'MORENA REPL v1.0.0 - Authorized Security Reconnaissance & Asset Audit Tool';
+  const titlePad = getCenterPadding(titleStr.length);
+  console.log(titlePad + chalk.bold.yellow(titleStr));
+
+  const helpStr = 'Type help to display available commands or exit-now to quit.';
+  const helpPad = getCenterPadding(helpStr.length);
+  console.log(helpPad + chalk.dim('Type ') + chalk.bold.cyan('help') + chalk.dim(' to display available commands or ') + chalk.bold.cyan('exit-now') + chalk.dim(' to quit.\n'));
 }
 
 /**
@@ -172,22 +185,24 @@ export async function playBootAnimation() {
     { from: 95, to: 100, task: 'SYSTEM INITIALIZATION COMPLETE.' }
   ];
 
-  const totalDurationMs = 10000; // Exactly 10 seconds
-  const tickIntervalMs = 100;    // 100ms per tick = 100 ticks total
+  const totalDurationMs = 10000;
+  const tickIntervalMs = 100;
   const totalTicks = totalDurationMs / tickIntervalMs;
 
   for (let tick = 0; tick <= totalTicks; tick++) {
     console.clear();
 
     const rows = getRows();
-    const width = Math.max(85, getCols() - 2);
+    const width = getCols();
+    const pad = getCenterPadding(108);
+
     const percent = Math.min(100, Math.floor((tick / totalTicks) * 100));
     const currentTask = loadingTasks.find(t => percent >= t.from && percent <= t.to)?.task || 'INITIALIZING...';
 
     const frameLines = [];
 
-    // 1. Middle Workstation + Scrambled Banner + Telemetry Dashboard Header
-    frameLines.push(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
+    // 1. Centered Workstation + Scrambled Banner + Telemetry Header
+    frameLines.push(pad + chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
 
     const shimmerRatio = percent < 90 ? Math.max(0.05, (100 - percent) / 200) : 0;
 
@@ -200,28 +215,31 @@ export async function playBootAnimation() {
       const bStyled = shimmerRatio === 0 ? chalk.bold.cyan(bLine) : chalk.green.bold(scrambleText(bLine, shimmerRatio));
       const telStyled = chalk.bold.yellow(telLine);
 
-      frameLines.push(`${pcStyled}  ${bStyled}  ${telStyled}`);
+      frameLines.push(`${pad}${pcStyled}  ${bStyled}  ${telStyled}`);
     }
 
-    frameLines.push(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘'));
+    frameLines.push(pad + chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘'));
 
     // 2. Bottom Fixed Cyber Loading Bar (3 lines)
-    const barWidth = Math.max(25, Math.min(40, width - 48));
+    const barLineWidth = Math.min(92, width - 6);
+    const barPad = getCenterPadding(barLineWidth + 4);
+
+    const barWidth = Math.max(25, Math.min(40, barLineWidth - 44));
     const completed = Math.floor((percent / 100) * barWidth);
     const remaining = barWidth - completed;
 
     const filledBar = chalk.bold.green('█'.repeat(completed));
     const emptyBar = chalk.dim.gray('░'.repeat(remaining));
     const pctStr = chalk.bold.cyan(`${String(percent).padStart(3, ' ')}%`);
-    const borderLine = '═'.repeat(Math.min(92, width - 4));
+    const borderLine = '═'.repeat(barLineWidth);
 
     const loadingBarLines = [
-      chalk.cyan(` ╔${borderLine}╗`),
-      ` ║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(42, ' '))} ║`,
-      chalk.cyan(` ╚${borderLine}╝`)
+      barPad + chalk.cyan(` ╔${borderLine}╗`),
+      barPad + ` ║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(42, ' '))} ║`,
+      barPad + chalk.cyan(` ╚${borderLine}╝`)
     ];
 
-    // 3. Fill available vertical space with live Matrix digital rain lines
+    // 3. Fill available vertical space with Matrix digital rain
     const usedLines = frameLines.length + loadingBarLines.length;
     const fillerRainLines = Math.max(1, rows - usedLines - 1);
 
