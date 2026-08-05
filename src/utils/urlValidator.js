@@ -8,7 +8,7 @@ export function validateUrl(urlString) {
     throw new Error('Target URL argument is required.');
   }
 
-  let normalized = urlString.trim();
+  let normalized = urlString.trim().replace(/^<+|>+$/g, '');
   if (!/^https?:\/\//i.test(normalized)) {
     normalized = `https://${normalized}`;
   }
