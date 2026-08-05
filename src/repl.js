@@ -71,6 +71,7 @@ function askQuestion(rl, query) {
  */
 function askPassword(rl, query) {
   return new Promise((resolve) => {
+    rl.pause();
     const stdoutWrite = process.stdout.write.bind(process.stdout);
     let password = '';
 
@@ -79,7 +80,7 @@ function askPassword(rl, query) {
       const char = data.toString();
       if (char === '\n' || char === '\r') {
         process.stdin.removeListener('data', stdinHandler);
-        process.stdin.setRawMode(false);
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
         process.stdout.write('\n');
         resolve(password);
       } else if (char === '\u007F' || char === '\b') {
@@ -90,7 +91,7 @@ function askPassword(rl, query) {
       } else if (char === '\u0003') {
         // Ctrl+C
         process.stdin.removeListener('data', stdinHandler);
-        process.stdin.setRawMode(false);
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
         process.stdout.write('\n');
         resolve('');
       } else {
@@ -99,7 +100,7 @@ function askPassword(rl, query) {
       }
     };
 
-    process.stdin.setRawMode(true);
+    if (process.stdin.isTTY) process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.on('data', stdinHandler);
   });

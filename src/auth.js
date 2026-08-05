@@ -119,6 +119,27 @@ export async function performLogin(targetUrl, username, password, timeoutSeconds
       if (usernameField) break;
     }
 
+    // If username input is not immediately visible, look for a Sign In / Log In button/link and click it!
+    if (!usernameField) {
+      const authRegex = /^(sign in|log in|login|signin|sign-in|log-in|get started)$/i;
+      const clickableElements = await page.$$('button, a, input[type="button"]');
+      for (const el of clickableElements) {
+        const text = (await page.evaluate(node => node.textContent, el) || '').trim();
+        const href = (await page.evaluate(node => node.getAttribute('href'), el) || '').trim();
+        if (authRegex.test(text) || href.includes('login') || href.includes('signin')) {
+          await el.click().catch(() => {});
+          await new Promise(r => setTimeout(r, 1500)); // Wait for login modal / form to render
+          break;
+        }
+      }
+
+      // Re-scan for username input
+      for (const sel of usernameSelectors) {
+        usernameField = await page.$(sel);
+        if (usernameField) break;
+      }
+    }
+
     if (!usernameField) {
       return { cookies: [], success: false, error: 'Could not detect username/email input field.' };
     }
