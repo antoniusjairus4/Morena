@@ -13,14 +13,13 @@ function getCols() {
 }
 
 /**
- * Multi-color palette presets for CMatrix columns.
+ * Multi-color palette presets for CMatrix columns (Pure Cyberpunk, No Emojis).
  */
 const PALETTES = [
   { head: chalk.white.bold, tail1: chalk.bold.green, tail2: chalk.green, tail3: chalk.dim.green },
   { head: chalk.white.bold, tail1: chalk.bold.cyan, tail2: chalk.cyan, tail3: chalk.dim.cyan },
-  { head: chalk.white.bold, tail1: chalk.bold.magenta, tail2: chalk.magenta, tail3: chalk.dim.magenta },
   { head: chalk.white.bold, tail1: chalk.bold.yellow, tail2: chalk.yellow, tail3: chalk.dim.yellow },
-  { head: chalk.white.bold, tail1: chalk.bold.blue, tail2: chalk.blue, tail3: chalk.dim.blue }
+  { head: chalk.white.bold, tail1: chalk.bold.green, tail2: chalk.cyan, tail3: chalk.dim.green }
 ];
 
 /**
@@ -28,7 +27,7 @@ const PALETTES = [
  */
 function initMatrixColumns(cols, rows) {
   const columns = [];
-  for (let x = 0; x < cols; x += 2) { // Every 2 columns for clean spacing
+  for (let x = 0; x < cols; x += 2) {
     columns.push({
       x: x,
       y: Math.floor(Math.random() * -rows),
@@ -47,11 +46,9 @@ function initMatrixColumns(cols, rows) {
 function updateMatrixColumns(columns, rows) {
   columns.forEach(col => {
     col.y += 1;
-    // Mutate trailing char
     if (col.y >= 0 && col.y < rows) {
       col.chars[col.y] = NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
     }
-    // Reset drop when tail passes bottom
     if (col.y - col.length > rows) {
       col.y = Math.floor(Math.random() * -8);
       col.length = Math.floor(Math.random() * 12) + 6;
@@ -97,28 +94,6 @@ function scrambleText(text, ratio = 0.3) {
   }).join('');
 }
 
-const computerAscii = [
-  ' ┌──────────────────┐ ',
-  ' │ ________________ │ ',
-  ' │ | MORENA CORE   || ',
-  ' │ | STATUS: OK    || ',
-  ' │ |________________|| ',
-  ' └───────┬─┬────────┘ ',
-  '  ┌──────┴─┴──────┐   ',
-  '  │ ░░░░░░░░░░░░░ │   ',
-  '  └───────────────┘   '
-];
-
-const telemetryAscii = [
-  ' ┌──[ TELEMETRY ]──────┐ ',
-  ' │ HOST: Kali Linux    │ ',
-  ' │ ENGINE: Puppeteer   │ ',
-  ' │ CRYPTO: AES-256     │ ',
-  ' │ SCANNER: Active     │ ',
-  ' │ STATUS: ARMED       │ ',
-  ' └─────────────────────┘ '
-];
-
 const bannerLines = [
   '  ███╗   ███╗ ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ ',
   '  ████╗ ████║██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗',
@@ -131,12 +106,48 @@ const bannerLines = [
 let animationInterval = null;
 let animTick = 0;
 
-const pulseIcons = ['⚡', '🟢', '🔥', '🚀', '✨', '💎'];
-const statusTexts = ['STATUS: OK    ', 'STATUS: ARMED ', 'STATUS: ACTIVE', 'STATUS: READY '];
+const spinnerFrames = ['[/]', '[-]', '[\\]', '[|]'];
+const statusTexts = ['SYS: OK   ', 'SYS: ARMED', 'SYS: RECON', 'SYS: READY'];
+const pulseIndicators = ['[+]', '[*]', '[#]', '[!]'];
 
 function getCenterPadding(contentWidth) {
   const cols = getCols();
   return ' '.repeat(Math.max(0, Math.floor((cols - contentWidth) / 2)));
+}
+
+/**
+ * Renders the live animated computer workstation ASCII frame.
+ */
+function getComputerAscii(tick) {
+  const spin = spinnerFrames[tick % spinnerFrames.length];
+  const sys = statusTexts[tick % statusTexts.length];
+  return [
+    ' ┌──────────────────┐ ',
+    ' │ ________________ │ ',
+    ' │ | MORENA CORE   || ',
+    ` │ | ${sys} ${spin}|| `,
+    ' │ |________________|| ',
+    ' └───────┬─┬────────┘ ',
+    '  ┌──────┴─┴──────┐   ',
+    '  │ ░░░░░░░░░░░░░ │   ',
+    '  └───────────────┘   '
+  ];
+}
+
+/**
+ * Renders the live animated telemetry ASCII card (No Emojis).
+ */
+function getTelemetryAscii(tick) {
+  const pulse = pulseIndicators[tick % pulseIndicators.length];
+  return [
+    ' ┌──[ TELEMETRY ]──────┐ ',
+    ' │ HOST: Kali Linux    │ ',
+    ' │ ENGINE: Puppeteer   │ ',
+    ' │ CRYPTO: AES-256     │ ',
+    ' │ SCANNER: Active     │ ',
+    ` │ STATUS: ARMED ${pulse}  │ `,
+    ' └─────────────────────┘ '
+  ];
 }
 
 /**
@@ -147,31 +158,9 @@ export function startLiveHeaderAnimation() {
 
   animationInterval = setInterval(() => {
     animTick++;
-    const icon = pulseIcons[animTick % pulseIcons.length];
-    const statusStr = statusTexts[animTick % statusTexts.length];
     const pad = getCenterPadding(108);
-
-    const currentPc = [
-      ' ┌──────────────────┐ ',
-      ' │ ________________ │ ',
-      ' │ | MORENA CORE   || ',
-      ` │ | ${statusStr} || `,
-      ' │ |________________|| ',
-      ' └───────┬─┬────────┘ ',
-      '  ┌──────┴─┴──────┐   ',
-      '  │ ░░░░░░░░░░░░░ │   ',
-      '  └───────────────┘   '
-    ];
-
-    const currentTel = [
-      ' ┌──[ TELEMETRY ]──────┐ ',
-      ' │ HOST: Kali Linux    │ ',
-      ' │ ENGINE: Puppeteer   │ ',
-      ' │ CRYPTO: AES-256     │ ',
-      ' │ SCANNER: Active     │ ',
-      ` │ STATUS: ARMED ${icon}   │ `,
-      ' └─────────────────────┘ '
-    ];
+    const currentPc = getComputerAscii(animTick);
+    const currentTel = getTelemetryAscii(animTick);
 
     process.stdout.write('\x1B[s\x1B[1;1H');
     process.stdout.write(pad + chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐\n'));
@@ -187,7 +176,7 @@ export function startLiveHeaderAnimation() {
 
     process.stdout.write(pad + chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘\n'));
     process.stdout.write('\x1B[u');
-  }, 400);
+  }, 350);
 }
 
 export function stopLiveHeaderAnimation() {
@@ -202,13 +191,15 @@ export function stopLiveHeaderAnimation() {
  */
 export function displayHeaderDashboard() {
   const pad = getCenterPadding(108);
+  const pc = getComputerAscii(0);
+  const tel = getTelemetryAscii(0);
 
   console.log(pad + chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
 
-  for (let i = 0; i < Math.max(computerAscii.length, bannerLines.length); i++) {
-    const pcLine = computerAscii[i] || '                      ';
+  for (let i = 0; i < Math.max(pc.length, bannerLines.length); i++) {
+    const pcLine = pc[i] || '                      ';
     const bLine = bannerLines[i] || '                                                      ';
-    const telLine = telemetryAscii[i] || '                        ';
+    const telLine = tel[i] || '                        ';
 
     console.log(`${pad}${chalk.bold.cyan(pcLine)}  ${chalk.bold.cyan(bLine)}  ${chalk.bold.yellow(telLine)}`);
   }
@@ -242,7 +233,7 @@ export async function playBootAnimation() {
   const matrixColumns = initMatrixColumns(cols, rows);
 
   const totalDurationMs = 10000;
-  const tickIntervalMs = 70; // Smooth 70ms tick
+  const tickIntervalMs = 70;
   const totalTicks = totalDurationMs / tickIntervalMs;
 
   for (let tick = 0; tick <= totalTicks; tick++) {
@@ -258,6 +249,9 @@ export async function playBootAnimation() {
     // Update falling matrix rain drops
     updateMatrixColumns(matrixColumns, currentRows);
 
+    const pc = getComputerAscii(tick);
+    const tel = getTelemetryAscii(tick);
+
     const frameLines = [];
 
     // 1. Centered Workstation + Scrambled Banner + Telemetry Header
@@ -265,10 +259,10 @@ export async function playBootAnimation() {
 
     const shimmerRatio = percent < 90 ? Math.max(0.05, (100 - percent) / 200) : 0;
 
-    for (let i = 0; i < Math.max(computerAscii.length, bannerLines.length); i++) {
-      const pcLine = computerAscii[i] || '                      ';
+    for (let i = 0; i < Math.max(pc.length, bannerLines.length); i++) {
+      const pcLine = pc[i] || '                      ';
       const bLine = bannerLines[i] || '                                                      ';
-      const telLine = telemetryAscii[i] || '                        ';
+      const telLine = tel[i] || '                        ';
 
       const pcStyled = chalk.bold.cyan(pcLine);
       const bStyled = shimmerRatio === 0 ? chalk.bold.cyan(bLine) : chalk.green.bold(scrambleText(bLine, shimmerRatio));
