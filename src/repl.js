@@ -50,10 +50,17 @@ function askQuestion(rl, query) {
  * Main REPL Command Router and Prompt Loop.
  */
 export function startRepl() {
+  process.stdin.resume();
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: chalk.bold.cyan('morena > ')
+  });
+
+  rl.on('SIGINT', () => {
+    console.log(chalk.yellow('\n[-] Use \'exit-now\' to quit Morena.'));
+    rl.prompt();
   });
 
   rl.prompt();
@@ -328,6 +335,7 @@ export function startRepl() {
       console.log(chalk.red(`[-] Error executing command: ${err.message}`));
     }
 
+    process.stdin.resume();
     rl.prompt();
   });
 
