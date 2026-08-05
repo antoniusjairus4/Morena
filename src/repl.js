@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
+import os from 'os';
 
 import { session } from './session.js';
 import { validateUrl } from './utils/urlValidator.js';
@@ -129,15 +130,24 @@ export function startRepl() {
             rl.pause();
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const defaultFilename = `morena-dump-${timestamp}.zip`;
-            console.log(chalk.cyan(`\nDefault destination: ./${defaultFilename}`));
+            
+            const downloadsFolder = path.join(os.homedir(), 'Downloads');
+            let defaultOutputDir = downloadsFolder;
+            try {
+              await fs.access(downloadsFolder);
+            } catch {
+              defaultOutputDir = process.cwd();
+            }
+            const defaultOutputPath = path.join(defaultOutputDir, defaultFilename);
+            console.log(chalk.cyan(`\nDefault destination: ${defaultOutputPath}`));
 
             const destInput = await askQuestion(
               rl,
-              chalk.bold.yellow('Specify output ZIP file path (or press Enter for default): ')
+              chalk.bold.yellow('Specify output ZIP file path (or press Enter for Downloads folder): ')
             );
             rl.resume();
 
-            const finalOutputPath = destInput || defaultFilename;
+            const finalOutputPath = destInput ? path.resolve(destInput) : defaultOutputPath;
             spinner.start(`Compressing staged frontend assets into archive: ${chalk.bold(finalOutputPath)}...`);
             
             const archiveInfo = await createZipArchive(session.stagingDir, finalOutputPath);

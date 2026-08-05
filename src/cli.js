@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
 import path from 'path';
+import os from 'os';
 
 import { validateUrl } from './utils/urlValidator.js';
 import { scrapeDOM } from './scraper.js';
@@ -51,7 +52,9 @@ program
       // 4. Determine default or requested ZIP archive path
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const defaultFilename = `frontend-dump-${timestamp}.zip`;
-      const outputPath = options.output ? options.output : defaultFilename;
+      const downloadsFolder = path.join(os.homedir(), 'Downloads');
+      const defaultOutputPath = path.join(downloadsFolder, defaultFilename);
+      const outputPath = options.output ? options.output : defaultOutputPath;
 
       // 5. Compress into single archive
       spinner.start(`Compressing staged frontend assets into archive: ${chalk.bold(outputPath)}...`);
