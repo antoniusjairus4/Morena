@@ -1,5 +1,37 @@
 import puppeteer from 'puppeteer';
 import fs from 'fs/promises';
+import * as cheerio from 'cheerio';
+
+/**
+ * Detects if DOM HTML contains a login form or password input fields.
+ * @param {string} html 
+ * @returns {boolean}
+ */
+export function detectLoginForm(html) {
+  if (!html) return false;
+  const $ = cheerio.load(html);
+
+  if ($('input[type="password"]').length > 0) return true;
+
+  let found = false;
+  $('form').each((_, form) => {
+    const text = $(form).text().toLowerCase();
+    const action = ($(form).attr('action') || '').toLowerCase();
+    const id = ($(form).attr('id') || '').toLowerCase();
+    const cls = ($(form).attr('class') || '').toLowerCase();
+
+    if (
+      action.includes('login') || action.includes('signin') || action.includes('auth') ||
+      id.includes('login') || id.includes('signin') || id.includes('auth') ||
+      cls.includes('login') || cls.includes('signin') || cls.includes('auth') ||
+      text.includes('sign in') || text.includes('log in') || text.includes('password')
+    ) {
+      found = true;
+    }
+  });
+
+  return found;
+}
 
 /**
  * Resolves system Chrome executable path.

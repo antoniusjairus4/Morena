@@ -11,7 +11,7 @@ import { validateUrl } from './utils/urlValidator.js';
 import { scrapeDOM } from './scraper.js';
 import { downloadAndStageAssets } from './assetManager.js';
 import { createZipArchive } from './archiver.js';
-import { performLogin, interactiveLogin } from './auth.js';
+import { performLogin, interactiveLogin, detectLoginForm } from './auth.js';
 import { discoverUrls, crawlPages } from './crawler.js';
 
 /**
@@ -390,6 +390,83 @@ export function startRepl() {
             spinner.fail(chalk.red('Scraping failed.'));
             console.log(chalk.red(`[-] Error: ${err.message}`));
             break;
+          }
+
+          // Pre-scrape Login Form Detection
+          if (!session.isAuthenticated() && detectLoginForm(currentHtml)) {
+            console.log(chalk.bold.yellow('\n[!] Login form detected on target page!'));
+            rl.pause();
+            process.stdin.setRawMode && process.stdin.setRawMode(false);
+
+            try {
+              const { authChoice } = await inquirer.prompt([
+                {
+                  type: 'list',
+                  name: 'authChoice',
+                  message: 'A login form was detected. How would you like to proceed?',
+                  choices: [
+                    { name: '● Scrape current public page only (without logging in)', value: 'public' },
+                    { name: '● Log in first (automated credentials), then scrape fully', value: 'auto_login' },
+                    { name: '● Log in manually (interactive browser window), then scrape fully', value: 'manual_login' }
+                  ]
+                }
+              ]);
+
+              if (authChoice === 'auto_login') {
+                const username = await askQuestion(rl, chalk.bold.yellow('Username / Email: '));
+                const password = await askPassword(rl, chalk.bold.yellow('Password: '));
+                if (username && password) {
+                  const loginSpinner = ora('Attempting automated login...').start();
+                  const loginRes = await performLogin(session.targetUrl.href, username, password, session.timeoutSeconds);
+                  if (loginRes.success) {
+                    session.setCookies(loginRes.cookies);
+                    loginSpinner.succeed(chalk.green.bold(`[+] Authenticated successfully. ${loginRes.cookies.length} session cookies captured.`));
+                    // Re-scrape DOM with authenticated session cookies
+                    spinner.start('Re-scraping DOM in authenticated state...');
+                    const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies);
+                    currentHtml = result.html;
+                    currentPageUrl = result.pageUrl;
+                    spinner.succeed(`Captured authenticated DOM from ${chalk.cyan(currentPageUrl)}`);
+                  } else {
+                    loginSpinner.fail(chalk.red(`[-] Login failed: ${loginRes.error}. Proceeding with public page.`));
+                  }
+                }
+              } else if (authChoice === 'manual_login') {
+                console.log(chalk.cyan('[*] Opening browser window... Log in manually, then type \'continue\' here.'));
+                const waitForContinue = () => {
+                  return new Promise((resolve) => {
+                    const handler = (data) => {
+                      const input = data.toString().trim().toLowerCase();
+                      if (input === 'continue') {
+                        process.stdin.removeListener('data', handler);
+                        resolve();
+                      }
+                    };
+                    process.stdin.setRawMode(false);
+                    process.stdin.resume();
+                    process.stdin.on('data', handler);
+                    process.stdout.write(chalk.bold.yellow('\nType \'continue\' when you have logged in: '));
+                  });
+                };
+                const loginRes = await interactiveLogin(session.targetUrl.href, waitForContinue, session.timeoutSeconds);
+                if (loginRes.success) {
+                  session.setCookies(loginRes.cookies);
+                  console.log(chalk.green.bold(`[+] Session captured from browser. ${loginRes.cookies.length} cookies stored.`));
+                  // Re-scrape DOM with authenticated session cookies
+                  spinner.start('Re-scraping DOM in authenticated state...');
+                  const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies);
+                  currentHtml = result.html;
+                  currentPageUrl = result.pageUrl;
+                  spinner.succeed(`Captured authenticated DOM from ${chalk.cyan(currentPageUrl)}`);
+                } else {
+                  console.log(chalk.red('[-] Manual login failed or no cookies captured. Proceeding with public page.'));
+                }
+              }
+            } catch (err) {
+              console.log(chalk.red(`[-] Prompt error: ${err.message}`));
+            }
+
+            rl.resume();
           }
 
           // Step 2: Download assets for current page
