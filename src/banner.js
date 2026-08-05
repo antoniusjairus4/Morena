@@ -2,10 +2,10 @@ import chalk from 'chalk';
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const NOISE_CHARS = '░▒▓█<>/\\|?#$@%!*&+=-~^0123456789ABCDEF';
+const NOISE_CHARS = '░▒▓█<>/\\|?#$@%!*&+=-~^0123456789ABCDEF0123456789abcdef';
 
 function getRows() {
-  return process.stdout.rows || 24;
+  return process.stdout.rows || 25;
 }
 
 function getCols() {
@@ -13,20 +13,75 @@ function getCols() {
 }
 
 /**
- * Generates a line of Matrix digital rain.
+ * Multi-color palette presets for CMatrix columns.
  */
-function getMatrixLine(width) {
-  let line = '';
-  for (let i = 0; i < width; i++) {
-    const r = Math.random();
-    if (r < 0.12) line += chalk.green.bold('1');
-    else if (r < 0.24) line += chalk.green('0');
-    else if (r < 0.38) line += chalk.dim.green(NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)]);
-    else if (r < 0.48) line += chalk.cyan(NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)]);
-    else if (r < 0.55) line += chalk.white.bold('█');
-    else line += ' ';
+const PALETTES = [
+  { head: chalk.white.bold, tail1: chalk.bold.green, tail2: chalk.green, tail3: chalk.dim.green },
+  { head: chalk.white.bold, tail1: chalk.bold.cyan, tail2: chalk.cyan, tail3: chalk.dim.cyan },
+  { head: chalk.white.bold, tail1: chalk.bold.magenta, tail2: chalk.magenta, tail3: chalk.dim.magenta },
+  { head: chalk.white.bold, tail1: chalk.bold.yellow, tail2: chalk.yellow, tail3: chalk.dim.yellow },
+  { head: chalk.white.bold, tail1: chalk.bold.blue, tail2: chalk.blue, tail3: chalk.dim.blue }
+];
+
+/**
+ * Initializes CMatrix column rain drops across all columns from left to right.
+ */
+function initMatrixColumns(cols, rows) {
+  const columns = [];
+  for (let x = 0; x < cols; x += 2) { // Every 2 columns for clean spacing
+    columns.push({
+      x: x,
+      y: Math.floor(Math.random() * -rows),
+      length: Math.floor(Math.random() * 12) + 6,
+      speed: Math.floor(Math.random() * 2) + 1,
+      palette: PALETTES[Math.floor(Math.random() * PALETTES.length)],
+      chars: Array.from({ length: rows }, () => NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)])
+    });
   }
-  return line;
+  return columns;
+}
+
+/**
+ * Updates column positions for next frame tick.
+ */
+function updateMatrixColumns(columns, rows) {
+  columns.forEach(col => {
+    col.y += 1;
+    // Mutate trailing char
+    if (col.y >= 0 && col.y < rows) {
+      col.chars[col.y] = NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
+    }
+    // Reset drop when tail passes bottom
+    if (col.y - col.length > rows) {
+      col.y = Math.floor(Math.random() * -8);
+      col.length = Math.floor(Math.random() * 12) + 6;
+      col.palette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+    }
+  });
+}
+
+/**
+ * Generates a full screen matrix rain grid row string.
+ */
+function generateRainRow(r, columns, cols) {
+  const charMap = {};
+  columns.forEach(col => {
+    const dist = col.y - r;
+    if (dist >= 0 && dist < col.length) {
+      const p = col.palette;
+      const char = col.chars[r] || '1';
+      if (dist === 0) charMap[col.x] = p.head(char);
+      else if (dist < 3) charMap[col.x] = p.tail1(char);
+      else if (dist < 7) charMap[col.x] = p.tail2(char);
+      else charMap[col.x] = p.tail3(char);
+    }
+  });
+
+  let rowStr = '';
+  for (let x = 0; x < cols; x++) {
+    rowStr += charMap[x] || ' ';
+  }
+  return rowStr;
 }
 
 /**
@@ -79,9 +134,6 @@ let animTick = 0;
 const pulseIcons = ['⚡', '🟢', '🔥', '🚀', '✨', '💎'];
 const statusTexts = ['STATUS: OK    ', 'STATUS: ARMED ', 'STATUS: ACTIVE', 'STATUS: READY '];
 
-/**
- * Calculates horizontal left margin for centering.
- */
 function getCenterPadding(contentWidth) {
   const cols = getCols();
   return ' '.repeat(Math.max(0, Math.floor((cols - contentWidth) / 2)));
@@ -173,7 +225,7 @@ export function displayHeaderDashboard() {
 }
 
 /**
- * Plays full-screen live dashboard frame + 10-second bottom loading bar.
+ * Plays full-screen multi-colored CMatrix rain cascade + 10-second bottom loading bar.
  */
 export async function playBootAnimation() {
   const loadingTasks = [
@@ -185,19 +237,26 @@ export async function playBootAnimation() {
     { from: 95, to: 100, task: 'SYSTEM INITIALIZATION COMPLETE.' }
   ];
 
+  const cols = getCols();
+  const rows = getRows();
+  const matrixColumns = initMatrixColumns(cols, rows);
+
   const totalDurationMs = 10000;
-  const tickIntervalMs = 100;
+  const tickIntervalMs = 70; // Smooth 70ms tick
   const totalTicks = totalDurationMs / tickIntervalMs;
 
   for (let tick = 0; tick <= totalTicks; tick++) {
     console.clear();
 
-    const rows = getRows();
-    const width = getCols();
+    const currentRows = getRows();
+    const currentCols = getCols();
     const pad = getCenterPadding(108);
 
     const percent = Math.min(100, Math.floor((tick / totalTicks) * 100));
     const currentTask = loadingTasks.find(t => percent >= t.from && percent <= t.to)?.task || 'INITIALIZING...';
+
+    // Update falling matrix rain drops
+    updateMatrixColumns(matrixColumns, currentRows);
 
     const frameLines = [];
 
@@ -221,7 +280,7 @@ export async function playBootAnimation() {
     frameLines.push(pad + chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘'));
 
     // 2. Bottom Fixed Cyber Loading Bar (3 lines)
-    const barLineWidth = Math.min(92, width - 6);
+    const barLineWidth = Math.min(92, currentCols - 6);
     const barPad = getCenterPadding(barLineWidth + 4);
 
     const barWidth = Math.max(25, Math.min(40, barLineWidth - 44));
@@ -239,12 +298,12 @@ export async function playBootAnimation() {
       barPad + chalk.cyan(` ╚${borderLine}╝`)
     ];
 
-    // 3. Fill available vertical space with Matrix digital rain
+    // 3. Fill available vertical space with true falling multi-colored CMatrix rain rows
     const usedLines = frameLines.length + loadingBarLines.length;
-    const fillerRainLines = Math.max(1, rows - usedLines - 1);
+    const fillerRainLines = Math.max(1, currentRows - usedLines - 1);
 
     for (let r = 0; r < fillerRainLines; r++) {
-      frameLines.push(getMatrixLine(width));
+      frameLines.push(generateRainRow(r, matrixColumns, currentCols));
     }
 
     // Append bottom loading bar
