@@ -273,23 +273,24 @@ export async function playBootAnimation() {
 
     frameLines.push(pad + chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘'));
 
-    // 2. Bottom Fixed Cyber Loading Bar (3 lines)
-    const barLineWidth = Math.min(92, currentCols - 6);
-    const barPad = getCenterPadding(barLineWidth + 4);
+    // 2. Bottom Fixed Cyber Loading Bar (3 lines - mathematically aligned)
+    const taskPadding = 38;
+    const barWidth = Math.max(20, Math.min(35, currentCols - 70));
+    const innerWidth = 15 + barWidth + 9 + taskPadding; // Exactly matches content width
+    const borderLine = '═'.repeat(innerWidth + 2);
+    const barPad = getCenterPadding(innerWidth + 4);
 
-    const barWidth = Math.max(25, Math.min(40, barLineWidth - 44));
     const completed = Math.floor((percent / 100) * barWidth);
     const remaining = barWidth - completed;
 
     const filledBar = chalk.bold.green('█'.repeat(completed));
     const emptyBar = chalk.dim.gray('░'.repeat(remaining));
     const pctStr = chalk.bold.cyan(`${String(percent).padStart(3, ' ')}%`);
-    const borderLine = '═'.repeat(barLineWidth);
 
     const loadingBarLines = [
-      barPad + chalk.cyan(` ╔${borderLine}╗`),
-      barPad + ` ║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(42, ' '))} ║`,
-      barPad + chalk.cyan(` ╚${borderLine}╝`)
+      barPad + chalk.cyan(`╔${borderLine}╗`),
+      barPad + `║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(taskPadding, ' '))} ║`,
+      barPad + chalk.cyan(`╚${borderLine}╝`)
     ];
 
     // 3. Fill available vertical space with true falling multi-colored CMatrix rain rows
