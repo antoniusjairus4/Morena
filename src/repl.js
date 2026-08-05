@@ -179,7 +179,18 @@ export function startRepl() {
           }
           const spinner = ora('Fetching HTTP response headers...').start();
           try {
-            const res = await fetch(session.targetUrl.href, { method: 'HEAD' });
+            let res;
+            try {
+              res = await fetch(session.targetUrl.href, {
+                method: 'HEAD',
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+              });
+            } catch {
+              res = await fetch(session.targetUrl.href, {
+                method: 'GET',
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+              });
+            }
             spinner.stop();
             console.log(chalk.bold.underline(`\nHTTP Response Headers for ${session.targetUrl.href}:`));
             console.log(chalk.cyan(`HTTP/1.1 ${res.status} ${res.statusText}`));
@@ -246,7 +257,10 @@ export function startRepl() {
           const spinner = ora('Pinging target URL...').start();
           try {
             const startTime = Date.now();
-            const res = await fetch(session.targetUrl.href, { method: 'GET' });
+            const res = await fetch(session.targetUrl.href, {
+              method: 'GET',
+              headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+            });
             const responseTime = Date.now() - startTime;
             spinner.stop();
             const statusColor = res.ok ? chalk.green : chalk.red;
