@@ -4,8 +4,12 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const NOISE_CHARS = '░▒▓█<>/\\|?#$@%!*&+=-~^0123456789ABCDEF';
 
+function getRows() {
+  return process.stdout.rows || 24;
+}
+
 function getCols() {
-  return process.stdout.columns || 100;
+  return process.stdout.columns || 90;
 }
 
 /**
@@ -39,11 +43,17 @@ function scrambleText(text, ratio = 0.3) {
 }
 
 /**
- * Renders full-screen live dashboard frame + 10-second bottom loading bar.
+ * Plays full-screen live dashboard frame + 10-second bottom loading bar.
  */
 export async function playBootAnimation() {
-  console.clear();
-  const width = Math.max(85, getCols() - 2);
+  const loadingTasks = [
+    { from: 0, to: 20, task: 'INITIALIZING KERNEL SUBSYSTEMS...' },
+    { from: 20, to: 40, task: 'CONNECTING PUPPETEER CHROMIUM ENGINE...' },
+    { from: 40, to: 60, task: 'MOUNTING DOM REWRITE & ASSET PIPELINE...' },
+    { from: 60, to: 80, task: 'LOADING OWASP SECURITY AUDITOR...' },
+    { from: 80, to: 95, task: 'ENGAGING SECRET & ENDPOINT SCANNER...' },
+    { from: 95, to: 100, task: 'SYSTEM INITIALIZATION COMPLETE.' }
+  ];
 
   const computerAscii = [
     ' ┌──────────────────┐ ',
@@ -76,15 +86,6 @@ export async function playBootAnimation() {
     '  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚══'
   ];
 
-  const loadingTasks = [
-    { from: 0, to: 20, task: 'INITIALIZING KERNEL SUBSYSTEMS...' },
-    { from: 20, to: 40, task: 'CONNECTING PUPPETEER CHROMIUM ENGINE...' },
-    { from: 40, to: 60, task: 'MOUNTING DOM REWRITE & ASSET PIPELINE...' },
-    { from: 60, to: 80, task: 'LOADING OWASP SECURITY AUDITOR...' },
-    { from: 80, to: 95, task: 'ENGAGING SECRET & ENDPOINT SCANNER...' },
-    { from: 95, to: 100, task: 'SYSTEM INITIALIZATION COMPLETE.' }
-  ];
-
   const totalDurationMs = 10000; // Exactly 10 seconds
   const tickIntervalMs = 100;    // 100ms per tick = 100 ticks total
   const totalTicks = totalDurationMs / tickIntervalMs;
@@ -92,19 +93,16 @@ export async function playBootAnimation() {
   for (let tick = 0; tick <= totalTicks; tick++) {
     console.clear();
 
+    const rows = getRows();
+    const width = Math.max(85, getCols() - 2);
     const percent = Math.min(100, Math.floor((tick / totalTicks) * 100));
-
-    // Current task description
     const currentTask = loadingTasks.find(t => percent >= t.from && percent <= t.to)?.task || 'INITIALIZING...';
 
-    // 1. Matrix Digital Rain Top Bar
-    console.log(getMatrixLine(width));
-    console.log(getMatrixLine(width));
+    const frameLines = [];
 
-    // 2. Middle Workstation + Scrambled Banner + Telemetry Dashboard
-    console.log(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
+    // 1. Middle Workstation + Scrambled Banner + Telemetry Dashboard Header
+    frameLines.push(chalk.bold.green(' ┌─[ WORKSTATION ]──────┐' + ' '.repeat(35) + '┌─[ SYSTEM DASHBOARD ]─┐'));
 
-    // Shimmer effect calculation
     const shimmerRatio = percent < 90 ? Math.max(0.05, (100 - percent) / 200) : 0;
 
     for (let i = 0; i < Math.max(computerAscii.length, bannerLines.length); i++) {
@@ -116,16 +114,13 @@ export async function playBootAnimation() {
       const bStyled = shimmerRatio === 0 ? chalk.bold.cyan(bLine) : chalk.green.bold(scrambleText(bLine, shimmerRatio));
       const telStyled = chalk.bold.yellow(telLine);
 
-      console.log(`${pcStyled}  ${bStyled}  ${telStyled}`);
+      frameLines.push(`${pcStyled}  ${bStyled}  ${telStyled}`);
     }
 
-    console.log(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘'));
+    frameLines.push(chalk.bold.green(' └──────────────────────┘' + ' '.repeat(35) + '└──────────────────────┘'));
 
-    // 3. Matrix Digital Rain Middle Separator
-    console.log(getMatrixLine(width));
-
-    // 4. Fixed Bottom 10-Second Cyber Loading Bar
-    const barWidth = Math.max(25, Math.min(45, width - 45));
+    // 2. Bottom Fixed Cyber Loading Bar (3 lines)
+    const barWidth = Math.max(25, Math.min(40, width - 48));
     const completed = Math.floor((percent / 100) * barWidth);
     const remaining = barWidth - completed;
 
@@ -134,25 +129,29 @@ export async function playBootAnimation() {
     const pctStr = chalk.bold.cyan(`${String(percent).padStart(3, ' ')}%`);
     const borderLine = '═'.repeat(Math.min(92, width - 4));
 
-    console.log(chalk.cyan(` ╔${borderLine}╗`));
-    console.log(` ║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(42, ' '))} ║`);
-    console.log(chalk.cyan(` ╚${borderLine}╝`));
+    const loadingBarLines = [
+      chalk.cyan(` ╔${borderLine}╗`),
+      ` ║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(42, ' '))} ║`,
+      chalk.cyan(` ╚${borderLine}╝`)
+    ];
+
+    // 3. Fill available vertical space with live Matrix digital rain lines to push loading bar to physical terminal bottom
+    const usedLines = frameLines.length + loadingBarLines.length;
+    const fillerRainLines = Math.max(1, rows - usedLines - 1);
+
+    for (let r = 0; r < fillerRainLines; r++) {
+      frameLines.push(getMatrixLine(width));
+    }
+
+    // Append bottom loading bar
+    frameLines.push(...loadingBarLines);
+
+    // Print entire frame
+    process.stdout.write(frameLines.join('\n') + '\n');
 
     await sleep(tickIntervalMs);
   }
 
   await sleep(200);
   console.clear();
-
-  // Final REPL Header
-  console.log(chalk.bold.cyan(`
-   ███╗   ███╗ ██████╗ ██████╗ ███████╗███╗   ██╗ █████╗ 
-   ████╗ ████║██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔══██╗
-   ██╔████╔██║██║   ██║██████╔╝█████╗  ██╔██╗ ██║███████║
-   ██║╚██╔╝██║██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║██╔══██║
-   ██║ ╚═╝ ██║╚██████╔╝██║  ██║███████╗██║ ╚████║██║  ██║
-   ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝
-  `));
-  console.log(chalk.bold.yellow('   MORENA REPL v1.0.0 - Authorized Security Reconnaissance & Asset Audit Tool'));
-  console.log(chalk.dim('   Type ') + chalk.bold.cyan('help') + chalk.dim(' to display available commands or ') + chalk.bold.cyan('exit-now') + chalk.dim(' to quit.\n'));
 }
