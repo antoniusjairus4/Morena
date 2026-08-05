@@ -131,16 +131,13 @@ function getCols() {
 }
 
 /**
- * Cyberpunk Dock Box Header & Prompt String.
+ * Cyberpunk Complete Closed Box Header & Footer.
  */
 const renderCyberDockHeader = () => {
   const width = Math.max(60, getCols() - 6);
   const topBarLeft = chalk.bold.green('██████') + chalk.dim.gray(' esc stop');
-  const topBarRight = chalk.dim.gray('exit-now quit');
-  const gapSize = Math.max(10, width - 25);
-  const topInfoLine = '  ' + topBarLeft + ' '.repeat(gapSize) + topBarRight;
   const topBorder = chalk.bold.green(' ╭' + '─'.repeat(width) + '╮');
-  return topInfoLine + '\n' + topBorder;
+  return '  ' + topBarLeft + '\n' + topBorder;
 };
 
 const renderCyberDockFooter = () => {
