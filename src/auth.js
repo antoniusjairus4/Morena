@@ -251,16 +251,33 @@ export async function interactiveLogin(targetUrl, waitForContinue, timeoutSecond
       allCookies = await page.cookies();
     }
 
-    // Deduplicate cookies by name and domain
-    const uniqueMap = new Map();
-    for (const c of allCookies) {
-      uniqueMap.set(`${c.name}_${c.domain}`, c);
-    }
-    const finalCookies = Array.from(uniqueMap.values());
+    // Extract localStorage & sessionStorage data
+    const localStorageData = await page.evaluate(() => {
+      const data = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        data[key] = localStorage.getItem(key);
+      }
+      return data;
+    }).catch(() => ({}));
 
-    return { cookies: finalCookies, success: finalCookies.length > 0 };
+    const sessionStorageData = await page.evaluate(() => {
+      const data = {};
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        data[key] = sessionStorage.getItem(key);
+      }
+      return data;
+    }).catch(() => ({}));
+
+    return {
+      cookies: finalCookies,
+      localStorage: localStorageData,
+      sessionStorage: sessionStorageData,
+      success: finalCookies.length > 0 || Object.keys(localStorageData).length > 0
+    };
   } catch (error) {
-    return { cookies: [], success: false, error: error.message };
+    return { cookies: [], localStorage: {}, sessionStorage: {}, success: false, error: error.message };
   } finally {
     if (browser) await browser.close();
   }

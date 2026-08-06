@@ -11,6 +11,8 @@ class SessionManager {
     this.timeoutSeconds = 30;
     this.commandHistory = [];
     this.cookies = [];
+    this.localStorageData = {};
+    this.sessionStorageData = {};
     this.discoveredUrls = [];
   }
 
@@ -19,7 +21,7 @@ class SessionManager {
   }
 
   isAuthenticated() {
-    return this.cookies.length > 0;
+    return this.cookies.length > 0 || Object.keys(this.localStorageData).length > 0;
   }
 
   lockTarget(urlObj) {
@@ -31,6 +33,11 @@ class SessionManager {
 
   setCookies(cookieArray) {
     this.cookies = cookieArray || [];
+  }
+
+  setStorage(localStorageObj, sessionStorageObj) {
+    this.localStorageData = localStorageObj || {};
+    this.sessionStorageData = sessionStorageObj || {};
   }
 
   setDiscoveredUrls(urls) {
@@ -75,6 +82,8 @@ class SessionManager {
     this.scrapedFilesList = [];
     this.commandHistory = [];
     this.cookies = [];
+    this.localStorageData = {};
+    this.sessionStorageData = {};
     this.discoveredUrls = [];
   }
 }

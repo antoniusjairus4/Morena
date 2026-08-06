@@ -59,11 +59,40 @@ export async function discoverUrls(targetUrl, cookies = [], timeoutSeconds = 30)
 
     const baseOrigin = new URL(targetUrl).origin;
 
-    // Extract all anchor hrefs from rendered DOM
+    // Extract all anchor hrefs, data attributes, and script endpoint routes from rendered DOM
     const hrefs = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('a[href]'))
-        .map(a => a.href)
-        .filter(Boolean);
+      const links = new Set();
+
+      // 1. Traditional <a> tags
+      document.querySelectorAll('a[href]').forEach(a => {
+        if (a.href) links.add(a.href);
+      });
+
+      // 2. Data attributes & navigation elements
+      document.querySelectorAll('[data-href], [data-route], [data-url], [role="link"]').forEach(el => {
+        const val = el.getAttribute('data-href') || el.getAttribute('data-route') || el.getAttribute('data-url');
+        if (val) {
+          try {
+            links.add(new URL(val, location.origin).href);
+          } catch {}
+        }
+      });
+
+      // 3. Scan script tags and inline JS for internal SPA routes
+      document.querySelectorAll('script').forEach(s => {
+        const text = s.textContent || '';
+        const matches = text.match(/["'](\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)["']/g);
+        if (matches) {
+          matches.forEach(m => {
+            const clean = m.replace(/['"]/g, '');
+            if (clean.length > 1 && !clean.startsWith('//') && !clean.includes('.') && !clean.startsWith('/api')) {
+              links.add(location.origin + clean);
+            }
+          });
+        }
+      });
+
+      return Array.from(links);
     });
 
     // Deduplicate, filter same-origin, normalize
