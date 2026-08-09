@@ -66,7 +66,7 @@ flowchart TD
 
 ---
 
-## 💻 Step-by-Step Installation Guide
+## 💻 Step-by-Step Installation Guide for all OS
 
 ### 🐧 1. Linux (Kali Linux, Ubuntu, Debian, Arch)
 
