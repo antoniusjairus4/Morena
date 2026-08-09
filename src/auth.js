@@ -271,10 +271,10 @@ export async function interactiveLogin(targetUrl, waitForContinue, timeoutSecond
     }).catch(() => ({}));
 
     return {
-      cookies: finalCookies,
+      cookies: allCookies,
       localStorage: localStorageData,
       sessionStorage: sessionStorageData,
-      success: finalCookies.length > 0 || Object.keys(localStorageData).length > 0
+      success: allCookies.length > 0 || Object.keys(localStorageData).length > 0
     };
   } catch (error) {
     return { cookies: [], localStorage: {}, sessionStorage: {}, success: false, error: error.message };

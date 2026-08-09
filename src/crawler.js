@@ -31,7 +31,7 @@ async function findChromePath() {
  * @param {number} timeoutSeconds - Navigation timeout.
  * @returns {Promise<{ path: string, fullUrl: string }[]>}
  */
-export async function discoverUrls(targetUrl, cookies = [], timeoutSeconds = 30) {
+export async function discoverUrls(targetUrl, cookies = [], localStorageData = {}, sessionStorageData = {}, timeoutSeconds = 30) {
   let browser;
   try {
     const executablePath = await findChromePath();
@@ -48,8 +48,24 @@ export async function discoverUrls(targetUrl, cookies = [], timeoutSeconds = 30)
     );
 
     // Inject cookies if authenticated
-    if (cookies.length > 0) {
+    if (cookies && cookies.length > 0) {
       await page.setCookie(...cookies);
+    }
+
+    // Inject storage if authenticated
+    if ((localStorageData && Object.keys(localStorageData).length > 0) || (sessionStorageData && Object.keys(sessionStorageData).length > 0)) {
+      await page.evaluateOnNewDocument((local, session) => {
+        if (local) {
+          for (const [k, v] of Object.entries(local)) {
+            try { localStorage.setItem(k, v); } catch {}
+          }
+        }
+        if (session) {
+          for (const [k, v] of Object.entries(session)) {
+            try { sessionStorage.setItem(k, v); } catch {}
+          }
+        }
+      }, localStorageData, sessionStorageData);
     }
 
     await page.goto(targetUrl, {
@@ -59,16 +75,17 @@ export async function discoverUrls(targetUrl, cookies = [], timeoutSeconds = 30)
 
     const baseOrigin = new URL(targetUrl).origin;
 
-    // Extract all anchor hrefs, data attributes, and script endpoint routes from rendered DOM
-    const hrefs = await page.evaluate(() => {
+    // 1. Extract DOM links, data attributes, inline scripts, and script bundle URLs
+    const { hrefs: domHrefs, scriptSrcs } = await page.evaluate(() => {
       const links = new Set();
+      const scripts = new Set();
 
-      // 1. Traditional <a> tags
+      // Traditional <a> tags
       document.querySelectorAll('a[href]').forEach(a => {
         if (a.href) links.add(a.href);
       });
 
-      // 2. Data attributes & navigation elements
+      // Data attributes & navigation elements
       document.querySelectorAll('[data-href], [data-route], [data-url], [role="link"]').forEach(el => {
         const val = el.getAttribute('data-href') || el.getAttribute('data-route') || el.getAttribute('data-url');
         if (val) {
@@ -78,28 +95,94 @@ export async function discoverUrls(targetUrl, cookies = [], timeoutSeconds = 30)
         }
       });
 
-      // 3. Scan script tags and inline JS for internal SPA routes
+      // Extract scripts from DOM and performance resources
       document.querySelectorAll('script').forEach(s => {
-        const text = s.textContent || '';
-        const matches = text.match(/["'](\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)["']/g);
-        if (matches) {
-          matches.forEach(m => {
-            const clean = m.replace(/['"]/g, '');
-            if (clean.length > 1 && !clean.startsWith('//') && !clean.includes('.') && !clean.startsWith('/api')) {
-              links.add(location.origin + clean);
-            }
-          });
+        if (s.src) {
+          try {
+            scripts.add(new URL(s.src, location.origin).href);
+          } catch {}
+        } else {
+          const text = s.textContent || '';
+          const matches = text.match(/["'\`](\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)["'\`]/g);
+          if (matches) {
+            matches.forEach(m => {
+              const clean = m.replace(/['"`]/g, '');
+              if (clean.length > 1 && !clean.startsWith('//') && !clean.includes('.') && !clean.startsWith('/api')) {
+                links.add(location.origin + clean);
+              }
+            });
+          }
         }
       });
 
-      return Array.from(links);
+      try {
+        performance.getEntriesByType('resource').forEach(r => {
+          if (r.name && (r.name.includes('.js') || r.initiatorType === 'script')) {
+            try {
+              scripts.add(new URL(r.name, location.origin).href);
+            } catch {}
+          }
+        });
+      } catch {}
+
+      return { hrefs: Array.from(links), scriptSrcs: Array.from(scripts) };
     });
+
+    const allHrefs = new Set(domHrefs);
+
+    // Scan full raw HTML source for inline route strings
+    try {
+      const html = await page.content();
+      const htmlMatches = html.match(/["'\`](\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)["'\`]/g);
+      if (htmlMatches) {
+        htmlMatches.forEach(m => {
+          const clean = m.replace(/['"`]/g, '');
+          if (
+            clean.length > 1 &&
+            !clean.startsWith('//') &&
+            !clean.includes('.') &&
+            !clean.startsWith('/api') &&
+            !clean.startsWith('/assets') &&
+            !clean.startsWith('/static')
+          ) {
+            allHrefs.add(baseOrigin + clean);
+          }
+        });
+      }
+    } catch {}
+
+    // 2. Fetch and scan external JS script bundles for client-side SPA routes
+    for (const src of scriptSrcs) {
+      try {
+        const res = await fetch(src);
+        if (!res.ok) continue;
+        const text = await res.text();
+        const matches = text.match(/["'\`](\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)["'\`]/g);
+        if (matches) {
+          matches.forEach(m => {
+            const clean = m.replace(/['"`]/g, '');
+            if (
+              clean.length > 1 &&
+              !clean.startsWith('//') &&
+              !clean.includes('.') &&
+              !clean.startsWith('/api') &&
+              !clean.startsWith('/assets') &&
+              !clean.startsWith('/static')
+            ) {
+              allHrefs.add(baseOrigin + clean);
+            }
+          });
+        }
+      } catch {
+        // Skip failed script fetches
+      }
+    }
 
     // Deduplicate, filter same-origin, normalize
     const seen = new Set();
     const results = [];
 
-    for (const href of hrefs) {
+    for (const href of allHrefs) {
       try {
         const parsed = new URL(href);
 
@@ -141,7 +224,7 @@ export async function discoverUrls(targetUrl, cookies = [], timeoutSeconds = 30)
  * @param {number} timeoutSeconds - Navigation timeout.
  * @returns {Promise<{ stagingDir: string, fileList: string[], pagesScraped: number }>}
  */
-export async function crawlPages(urls, cookies = [], timeoutSeconds = 30) {
+export async function crawlPages(urls, cookies = [], localStorageData = {}, sessionStorageData = {}, timeoutSeconds = 30) {
   let browser;
   const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morena-crawl-'));
   const allFiles = [];
@@ -162,8 +245,23 @@ export async function crawlPages(urls, cookies = [], timeoutSeconds = 30) {
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         );
 
-        if (cookies.length > 0) {
+        if (cookies && cookies.length > 0) {
           await page.setCookie(...cookies);
+        }
+
+        if ((localStorageData && Object.keys(localStorageData).length > 0) || (sessionStorageData && Object.keys(sessionStorageData).length > 0)) {
+          await page.evaluateOnNewDocument((local, session) => {
+            if (local) {
+              for (const [k, v] of Object.entries(local)) {
+                try { localStorage.setItem(k, v); } catch {}
+              }
+            }
+            if (session) {
+              for (const [k, v] of Object.entries(session)) {
+                try { sessionStorage.setItem(k, v); } catch {}
+              }
+            }
+          }, localStorageData, sessionStorageData);
         }
 
         const response = await page.goto(url, {

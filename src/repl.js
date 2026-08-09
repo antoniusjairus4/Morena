@@ -135,9 +135,8 @@ function getCols() {
  */
 const renderCyberDockHeader = () => {
   const width = Math.max(60, getCols() - 6);
-  const topBarLeft = chalk.bold.green('██████') + chalk.dim.gray(' esc stop');
   const topBorder = chalk.bold.green(' ╭' + '─'.repeat(width) + '╮');
-  return '  ' + topBarLeft + '\n' + topBorder;
+  return topBorder;
 };
 
 const renderCyberDockFooter = () => {
@@ -283,7 +282,8 @@ export function startRepl() {
 
           if (result.success) {
             session.setCookies(result.cookies);
-            console.log(chalk.green.bold(`[+] Session captured from browser. ${result.cookies.length} cookies stored automatically.`));
+            session.setStorage(result.localStorage, result.sessionStorage);
+            console.log(chalk.green.bold(`[+] Session captured from browser. ${result.cookies.length} cookies, ${Object.keys(result.localStorage || {}).length} storage items stored.`));
           } else {
             console.log(chalk.red(`[-] Interactive login failed: ${result.error || 'No cookies captured.'}`));
           }
@@ -301,7 +301,7 @@ export function startRepl() {
 
           const spinner = ora('Scanning target for internal routes and links...').start();
           try {
-            const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.timeoutSeconds);
+            const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
             session.setDiscoveredUrls(urls);
             spinner.succeed(`Discovered ${chalk.bold(urls.length)} internal route(s)`);
 
@@ -329,33 +329,59 @@ export function startRepl() {
             console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
             break;
           }
-          if (session.discoveredUrls.length === 0) {
-            console.log(chalk.yellow('[-] No routes discovered yet. Run \'find\' first.'));
-            break;
-          }
 
-          const query = args.join(' ').toLowerCase();
+          const query = args.join(' ').trim();
           if (!query) {
-            console.log(chalk.red('[-] Usage: crawl <page-name>  (e.g., crawl dashboard)'));
+            console.log(chalk.red('[-] Usage: crawl <page-name-or-url>  (e.g., crawl dashboard or crawl /dashboard/transactions)'));
             break;
           }
 
-          // Find matching route
-          const match = session.discoveredUrls.find(u =>
-            u.path.toLowerCase().includes(query) || u.fullUrl.toLowerCase().includes(query)
-          );
+          let targetCrawlUrl = null;
+          let targetPathName = query;
 
-          if (!match) {
-            console.log(chalk.red(`[-] No discovered route matches '${query}'. Run 'find' to see available routes.`));
-            break;
+          if (query.startsWith('http://') || query.startsWith('https://')) {
+            targetCrawlUrl = query;
+            try { targetPathName = new URL(query).pathname; } catch { targetPathName = query; }
+          } else if (query.startsWith('/')) {
+            targetCrawlUrl = session.targetUrl.origin + query;
+            targetPathName = query;
+          } else {
+            // Auto-discover if not discovered yet
+            if (session.discoveredUrls.length === 0) {
+              const findSpinner = ora('Auto-discovering internal routes...').start();
+              try {
+                const urls = await discoverUrls(
+                  session.targetUrl.href,
+                  session.cookies,
+                  session.localStorageData,
+                  session.sessionStorageData,
+                  session.timeoutSeconds
+                );
+                session.setDiscoveredUrls(urls);
+                findSpinner.succeed(`Discovered ${urls.length} internal route(s)`);
+              } catch {
+                findSpinner.fail('Auto-discovery failed.');
+              }
+            }
+
+            const match = session.discoveredUrls.find(u =>
+              u.path.toLowerCase().includes(query.toLowerCase()) || u.fullUrl.toLowerCase().includes(query.toLowerCase())
+            );
+
+            if (match) {
+              targetCrawlUrl = match.fullUrl;
+              targetPathName = match.path;
+            } else {
+              targetCrawlUrl = new URL(query, session.targetUrl.origin).href;
+            }
           }
 
-          const spinner = ora(`Crawling ${match.path}...`).start();
+          const spinner = ora(`Crawling ${targetPathName}...`).start();
           try {
-            const result = await crawlPages([match.fullUrl], session.cookies, session.timeoutSeconds);
+            const result = await crawlPages([targetCrawlUrl], session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
             session.stagingDir = result.stagingDir;
             session.scrapedFilesList = [...session.scrapedFilesList, ...result.fileList];
-            spinner.succeed(`Crawled ${chalk.cyan(match.path)} — ${result.fileList.length} file(s) captured`);
+            spinner.succeed(`Crawled ${chalk.cyan(targetPathName)} — ${result.fileList.length} file(s) captured`);
 
             // Archive
             const defaultOutput = await getDefaultOutputPath(`morena-crawl-${query}`);
@@ -417,7 +443,7 @@ export function startRepl() {
           let currentHtml, currentPageUrl;
           try {
             spinner.start('Launching headless browser and navigating to target...');
-            const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies);
+            const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies, session.localStorageData, session.sessionStorageData);
             currentHtml = result.html;
             currentPageUrl = result.pageUrl;
             spinner.succeed(`Scraped final runtime DOM from ${chalk.cyan(currentPageUrl)}`);
@@ -458,7 +484,7 @@ export function startRepl() {
                     loginSpinner.succeed(chalk.green.bold(`[+] Authenticated successfully. ${loginRes.cookies.length} session cookies captured.`));
                     // Re-scrape DOM with authenticated session cookies
                     spinner.start('Re-scraping DOM in authenticated state...');
-                    const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies);
+                    const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies, session.localStorageData, session.sessionStorageData);
                     currentHtml = result.html;
                     currentPageUrl = result.pageUrl;
                     spinner.succeed(`Captured authenticated DOM from ${chalk.cyan(currentPageUrl)}`);
@@ -488,10 +514,11 @@ export function startRepl() {
                 rl.resume();
                 if (loginRes.success) {
                   session.setCookies(loginRes.cookies);
-                  console.log(chalk.green.bold(`[+] Session captured from browser. ${loginRes.cookies.length} cookies stored.`));
+                  session.setStorage(loginRes.localStorage, loginRes.sessionStorage);
+                  console.log(chalk.green.bold(`[+] Session captured from browser. ${loginRes.cookies.length} cookies, ${Object.keys(loginRes.localStorage || {}).length} storage items stored.`));
                   // Re-scrape DOM with authenticated session cookies
                   spinner.start('Re-scraping DOM in authenticated state...');
-                  const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies);
+                  const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies, session.localStorageData, session.sessionStorageData);
                   currentHtml = result.html;
                   currentPageUrl = result.pageUrl;
                   spinner.succeed(`Captured authenticated DOM from ${chalk.cyan(currentPageUrl)}`);
@@ -526,7 +553,7 @@ export function startRepl() {
             if (session.discoveredUrls.length === 0) {
               spinner.start('Discovering internal routes for full scrape...');
               try {
-                const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.timeoutSeconds);
+                const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
                 session.setDiscoveredUrls(urls);
                 spinner.succeed(`Found ${urls.length} internal route(s)`);
               } catch {
@@ -538,7 +565,7 @@ export function startRepl() {
               spinner.start(`Crawling ${session.discoveredUrls.length} additional pages...`);
               try {
                 const allUrls = session.discoveredUrls.map(u => u.fullUrl);
-                const crawlResult = await crawlPages(allUrls, session.cookies, session.timeoutSeconds);
+                const crawlResult = await crawlPages(allUrls, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
                 session.scrapedFilesList = [...session.scrapedFilesList, ...crawlResult.fileList];
 
                 // Merge crawled staging into main staging
@@ -578,7 +605,7 @@ export function startRepl() {
           if (session.discoveredUrls.length === 0) {
             // Auto-discover
             try {
-              const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.timeoutSeconds);
+              const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
               session.setDiscoveredUrls(urls);
             } catch {
               // No routes found — proceed with single page
@@ -622,7 +649,7 @@ export function startRepl() {
                 if (selectedPages.length > 0) {
                   const sp = ora(`Crawling ${selectedPages.length} selected page(s)...`).start();
                   try {
-                    const crawlResult = await crawlPages(selectedPages, session.cookies, session.timeoutSeconds);
+                    const crawlResult = await crawlPages(selectedPages, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
                     session.scrapedFilesList = [...session.scrapedFilesList, ...crawlResult.fileList];
 
                     const crawledEntries = await fs.readdir(crawlResult.stagingDir, { withFileTypes: true });
@@ -642,7 +669,7 @@ export function startRepl() {
                 const sp = ora(`Crawling ${session.discoveredUrls.length} page(s)...`).start();
                 try {
                   const allUrls = session.discoveredUrls.map(u => u.fullUrl);
-                  const crawlResult = await crawlPages(allUrls, session.cookies, session.timeoutSeconds);
+                  const crawlResult = await crawlPages(allUrls, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
                   session.scrapedFilesList = [...session.scrapedFilesList, ...crawlResult.fileList];
 
                   const crawledEntries = await fs.readdir(crawlResult.stagingDir, { withFileTypes: true });

@@ -10,7 +10,7 @@ import fs from 'fs/promises';
  * @param {object[]} cookies - Optional Puppeteer cookies to inject before navigation.
  * @returns {Promise<{ html: string, pageUrl: string }>}
  */
-export async function scrapeDOM(targetUrl, timeoutSeconds = 30, cookies = []) {
+export async function scrapeDOM(targetUrl, timeoutSeconds = 30, cookies = [], localStorageData = {}, sessionStorageData = {}) {
   let browser;
   try {
     // Launch Puppeteer with system Chrome executable or fallback to default
@@ -46,8 +46,24 @@ export async function scrapeDOM(targetUrl, timeoutSeconds = 30, cookies = []) {
     );
 
     // Inject session cookies if provided
-    if (cookies.length > 0) {
+    if (cookies && cookies.length > 0) {
       await page.setCookie(...cookies);
+    }
+
+    // Inject storage if authenticated
+    if ((localStorageData && Object.keys(localStorageData).length > 0) || (sessionStorageData && Object.keys(sessionStorageData).length > 0)) {
+      await page.evaluateOnNewDocument((local, session) => {
+        if (local) {
+          for (const [k, v] of Object.entries(local)) {
+            try { localStorage.setItem(k, v); } catch {}
+          }
+        }
+        if (session) {
+          for (const [k, v] of Object.entries(session)) {
+            try { sessionStorage.setItem(k, v); } catch {}
+          }
+        }
+      }, localStorageData, sessionStorageData);
     }
 
     // Navigate to URL and wait until network is idle (networkidle2)
