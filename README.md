@@ -11,7 +11,7 @@
 
 # MORENA REPL
 
-**Automated Client-Side Web Archiving, Security Reconnaissance & Asset Auditing Tool**
+**Automated Client-Sidedd Web Archiving, Security Reconnaissance & Asset Auditing Tool**
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg?style=for-the-badge&logo=node.js)](https://nodejs.org)
 [![Platform Support](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg?style=for-the-badge&logo=linux)](https://github.com/antoniusjairus4/Morena)
