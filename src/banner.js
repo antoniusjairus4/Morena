@@ -276,7 +276,7 @@ export async function playBootAnimation() {
     // 2. Bottom Fixed Cyber Loading Bar (3 lines - mathematically aligned)
     const taskPadding = 38;
     const barWidth = Math.max(20, Math.min(35, currentCols - 70));
-    const innerWidth = 15 + barWidth + 9 + taskPadding; // Exactly matches content width
+    const innerWidth = 11 + barWidth + 9 + taskPadding; // Exactly matches content width
     const borderLine = '═'.repeat(innerWidth + 2);
     const barPad = getCenterPadding(innerWidth + 4);
 
@@ -289,7 +289,7 @@ export async function playBootAnimation() {
 
     const loadingBarLines = [
       barPad + chalk.cyan(`╔${borderLine}╗`),
-      barPad + `║ ${chalk.bold.yellow('[LOADING 10s]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(taskPadding, ' '))} ║`,
+      barPad + `║ ${chalk.bold.yellow('[LOADING]')} [${filledBar}${emptyBar}] ${pctStr} ${chalk.dim('│')} ${chalk.bold.white(currentTask.padEnd(taskPadding, ' '))} ║`,
       barPad + chalk.cyan(`╚${borderLine}╝`)
     ];
 
