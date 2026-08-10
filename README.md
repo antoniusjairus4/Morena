@@ -11,14 +11,14 @@
 
 # MORENA REPL
 
-**Automated Client-Side Web Archiving, Security Reconnaissance & Asset Auditing Tool**
+**Automated Client-Sidedd Web Archiving, Security Reconnaissance & Asset Auditing Tool**
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg?style=for-the-badge&logo=node.js)](https://nodejs.org)
 [![Platform Support](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg?style=for-the-badge&logo=linux)](https://github.com/antoniusjairus4/Morena)
 [![License](https://img.shields.io/badge/license-ISC-orange.svg?style=for-the-badge)](LICENSE)
 [![Puppeteer Automation](https://img.shields.io/badge/engine-Puppeteer%20v22-red.svg?style=for-the-badge&logo=googlechrome)](https://pptr.dev)
 
-*Morena is a stateful command-line REPL tool designed for authorized web asset auditing, DOM reconstruction, secret scanning, and security reporting.*
+*Morena is a stateful command-line REPL tool designed for authorized web asset auditing, DOM reconstruction, route discovery, secret scanning, and security reporting.*
 
 </div>
 
@@ -28,15 +28,16 @@
 
 | Feature | Description |
 | :--- | :--- |
-| **🔒 Persistent Session Locking** | Lock onto a target host (`morena > target <url>`) and maintain active session state. |
-| **⚡ Single-Page Asset Capture** | Instant, zero-friction scraping of target DOM and linked CSS, JS, image, and icon dependencies (`take`). |
+| **🔒 Persistent Session Locking** | Lock onto a target host (`morena > target <url>`) and maintain active session timers. |
+| **🔑 Dual Authentication Modes** | Automated form credential login (`login`) & manual browser login (`interactive`) with automatic session cookie capture. |
+| **🔎 Route & Link Discovery** | Discover all same-origin internal routes on any web application (`find`). |
 | **🔍 Tech Stack Fingerprinting** | Identify frameworks (React, Next, Vue), UI libraries, CDNs, and web servers (`tech-stack`). |
 | **🛡️ OWASP Header Auditor** | Evaluate target HTTP headers (CSP, HSTS, CORS, Clickjacking flags) (`audit`). |
 | **🔑 Secret & Token Scanner** | Scan JS bundles for leaked API keys, tokens, internal IPs & developer comments (`secrets`). |
 | **🌐 API Route Extractor** | Extract hidden REST routes, endpoints, and WebSockets from JavaScript assets (`endpoints`). |
 | **📄 Security Report Generator** | Export structured HTML security audit reports directly to `~/Downloads` (`report`). |
-| **🌳 Hierarchical ASCII Tree** | Visualize captured DOM & asset structures in a clean file tree format (`show`). |
-| **📦 Automatic ZIP Archiving** | Reconstructs offline-compatible HTML/CSS/JS/images directly into a ZIP archive (`take`). |
+| **🌳 Hierarchical ASCII Tree** | Visualize captured DOM & asset structures in tree format (`show`). |
+| **📦 Automatic ZIP Archiving** | Reconstructs offline-compatible HTML/CSS/JS/images directly to `~/Downloads` (`take`, `take -all`). |
 
 ---
 
@@ -45,14 +46,22 @@
 ```mermaid
 flowchart TD
     A[Launch Animated Morena REPL] --> B[Lock Target URL\n'target <url>']
-    B --> C[Scrape Target DOM & Frontend Assets\n'take']
-    C --> D[Run Security Scanners]
-    D --> E1[Fingerprint Tech\n'tech-stack']
-    D --> E2[Audit Security Headers\n'audit']
-    D --> E3[Scan Leaked Secrets\n'secrets']
-    D --> E4[Extract API Endpoints\n'endpoints']
-    D --> F[Generate Audit Report\n'report']
-    D --> G[Package Offline ZIP\n~/Downloads]
+    B --> C{Detect Login / Auth Options}
+    C -- Login Detected --> D[Choose Auth Mode]
+    D --> E[Automated Form Login\n'login']
+    D --> F[Manual Chrome Browser\n'interactive']
+    E --> G[Capture Session Cookies]
+    F --> G
+    C -- Public Page --> H[Scrape Runtime DOM & Assets]
+    G --> H
+    H --> I[Discover Internal Routes\n'find']
+    I --> J[Run Security Scanners]
+    J --> K1[Fingerprint Tech\n'tech-stack']
+    J --> K2[Audit Security Headers\n'audit']
+    J --> K3[Scan Leaked Secrets\n'secrets']
+    J --> K4[Extract API Endpoints\n'endpoints']
+    J --> L[Generate Audit Report\n'report']
+    J --> M[Package Assets\n'take -all']
 ```
 
 ---
@@ -127,18 +136,22 @@ morena
 | Command | Usage Example | Description |
 | :--- | :--- | :--- |
 | `target` | `target palindrome.antoniusjairus.in` | Lock target host and start session timer |
-| `take` | `take` | Scrapes target DOM + asset dependencies and exports ZIP archive |
-| `show` | `show` | Renders a hierarchical ASCII file tree of scraped assets |
+| `login` | `login` | Automated form login (prompts for username & password) |
+| `interactive` | `interactive` | Opens visible Chrome window for manual browser login |
+| `find` | `find` | Discovers all internal routes (`/dashboard`, `/profile`, etc.) |
+| `crawl` | `crawl dashboard` | Scrapes a specific discovered route |
+| `take` | `take` | Scrapes target DOM + assets; triggers page selector |
+| `take -all` | `take -all` | Scrapes current page AND all discovered routes into one ZIP |
 | `tech-stack` | `tech-stack` | Fingerprints frameworks (React, Next), UI libs, CDNs, & servers |
 | `secrets` | `secrets` | Scans JS assets for leaked API keys, tokens & developer comments |
 | `endpoints` | `endpoints` | Extracts hidden REST API routes & WebSockets from JS bundles |
 | `audit` | `audit` | Audits response headers against OWASP guidelines (CSP, CORS) |
 | `report` | `report` | Generates formatted HTML security audit report in `~/Downloads` |
+| `show` | `show` | Renders a hierarchical ASCII file tree of scraped assets |
+| `scession -time`| `scession -time` | Displays elapsed session duration since target lock |
+| `info` | `info` | Displays formatted session status card |
 | `headers` | `headers` | Fetches target HTTP response headers |
 | `status` | `status` | Pings target URL and reports HTTP status and latency |
-| `info` | `info` | Displays formatted session status card |
-| `scession -time`| `scession -time` | Displays elapsed session duration since target lock |
-| `set-timeout` | `set-timeout 30` | Dynamically set Puppeteer page load timeout limit |
 | `clean` | `clean` | Deletes temporary staging files and caches |
 | `history` | `history` | Displays list of commands executed in session |
 | `exit-now` | `exit-now` | Cleans staging directories and exits Morena cleanly |
@@ -150,12 +163,6 @@ morena
 ```text
 morena > target palindrome.antoniusjairus.in
 [+] Target identified and locked: https://palindrome.antoniusjairus.in/
-
-morena > take
-✔ Scraped final runtime DOM from https://palindrome.antoniusjairus.in/
-✔ Downloaded 6 frontend asset dependencies
-Save archive to (Enter for /home/jairus/Downloads/morena-dump-2026-08-10.zip):
-✔ Packaging complete! Archive successfully generated.
 
 morena > tech-stack
 Technology Stack Fingerprints for https://palindrome.antoniusjairus.in/:
@@ -173,20 +180,24 @@ OWASP Security Headers Audit for https://palindrome.antoniusjairus.in/:
          ➜ Set X-Frame-Options to DENY or SAMEORIGIN to prevent Clickjacking.
 
 morena > secrets
-Secret & Sensitive Pattern Scanner Results:
-  1. [Internal IP Address] config.js (line 108)
+Secret & Sensitive Pattern Scanner Results (2 findings):
+  1. [Developer TODO/FIXME Comment] app.js (line 42)
+     // TODO: Fix authentication fallback token before deployment
+  2. [Internal IP Address] config.js (line 108)
      172.16.0.2
 
 morena > endpoints
 Extracted API Routes & Connections for https://palindrome.antoniusjairus.in/:
-  REST / API Routes:
+  REST / API Routes (4):
     • /api/v1/auth/login
     • /api/v1/user/profile
+    • /api/v1/transactions
+    • /api/v1/analytics
 
 morena > report
 ✔ Security audit report generated!
-Location: /home/jairus/Downloads/morena-report-2026-08-10.html
-Summary:  2 Header Failures; 1 Secret Findings
+Location: /home/jairus/Downloads/morena-report-2026-08-05.html
+Summary:  2 Header Failures; 2 Secret Findings
 ```
 
 ---

@@ -4,12 +4,15 @@ import path from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
 import os from 'os';
+import inquirer from 'inquirer';
 
 import { session } from './session.js';
 import { validateUrl } from './utils/urlValidator.js';
 import { scrapeDOM } from './scraper.js';
 import { downloadAndStageAssets } from './assetManager.js';
 import { createZipArchive } from './archiver.js';
+import { performLogin, interactiveLogin, detectLoginForm } from './auth.js';
+import { discoverUrls, crawlPages } from './crawler.js';
 import { analyzeTechStack } from './analyzer/techStack.js';
 import { scanForSecrets } from './analyzer/secretsScanner.js';
 import { extractEndpoints } from './analyzer/endpointExtractor.js';
@@ -65,6 +68,46 @@ function askQuestion(rl, query) {
     rl.question(query, (answer) => {
       resolve(answer.trim());
     });
+  });
+}
+
+/**
+ * Masked password input.
+ */
+function askPassword(rl, query) {
+  return new Promise((resolve) => {
+    rl.pause();
+    const stdoutWrite = process.stdout.write.bind(process.stdout);
+    let password = '';
+
+    process.stdout.write(query);
+    const stdinHandler = (data) => {
+      const char = data.toString();
+      if (char === '\n' || char === '\r') {
+        process.stdin.removeListener('data', stdinHandler);
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
+        process.stdout.write('\n');
+        resolve(password);
+      } else if (char === '\u007F' || char === '\b') {
+        if (password.length > 0) {
+          password = password.slice(0, -1);
+          stdoutWrite('\b \b');
+        }
+      } else if (char === '\u0003') {
+        // Ctrl+C
+        process.stdin.removeListener('data', stdinHandler);
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
+        process.stdout.write('\n');
+        resolve('');
+      } else {
+        password += char;
+        stdoutWrite('*');
+      }
+    };
+
+    if (process.stdin.isTTY) process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', stdinHandler);
   });
 }
 
@@ -168,6 +211,201 @@ export function startRepl() {
         }
 
         // ──────────────────────────────────────────────
+        // LOGIN (automated form login)
+        // ──────────────────────────────────────────────
+        case 'login': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+          if (session.isAuthenticated()) {
+            console.log(chalk.yellow('[-] Already authenticated. Use \'exit-now\' to reset session.'));
+            break;
+          }
+
+          rl.pause();
+          const username = await askQuestion(rl, chalk.bold.yellow('Username / Email: '));
+          const password = await askPassword(rl, chalk.bold.yellow('Password: '));
+          rl.resume();
+
+          if (!username || !password) {
+            console.log(chalk.red('[-] Username and password are required.'));
+            break;
+          }
+
+          const spinner = ora('Attempting automated login...').start();
+          const result = await performLogin(session.targetUrl.href, username, password, session.timeoutSeconds);
+
+          if (result.success) {
+            session.setCookies(result.cookies);
+            spinner.succeed(chalk.green.bold(`[+] Authenticated successfully. ${result.cookies.length} session cookies captured automatically.`));
+          } else {
+            spinner.fail(chalk.red(`[-] Login failed: ${result.error}`));
+            console.log(chalk.yellow('    Try \'interactive\' for manual browser login.'));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
+        // INTERACTIVE (visible browser manual login)
+        // ──────────────────────────────────────────────
+        case 'interactive': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+
+          console.log(chalk.cyan('[*] Opening browser window... Log in manually, then type \'continue\' here.'));
+
+          rl.pause();
+
+          const waitForContinue = () => {
+            return new Promise((resolve) => {
+              process.stdout.write(chalk.bold.yellow('\nPress ENTER or type \'continue\' when you have logged in in the browser window... '));
+              
+              if (process.stdin.isTTY) process.stdin.setRawMode(false);
+              process.stdin.resume();
+
+              const handler = (data) => {
+                const input = data.toString().trim().toLowerCase();
+                if (input.includes('continue') || input === '' || data.toString().includes('\r') || data.toString().includes('\n')) {
+                  process.stdin.removeListener('data', handler);
+                  resolve();
+                }
+              };
+              process.stdin.on('data', handler);
+            });
+          };
+
+          const result = await interactiveLogin(session.targetUrl.href, waitForContinue, session.timeoutSeconds);
+          rl.resume();
+
+          if (result.success) {
+            session.setCookies(result.cookies);
+            session.setStorage(result.localStorage, result.sessionStorage);
+            console.log(chalk.green.bold(`[+] Session captured from browser. ${result.cookies.length} cookies, ${Object.keys(result.localStorage || {}).length} storage items stored.`));
+          } else {
+            console.log(chalk.red(`[-] Interactive login failed: ${result.error || 'No cookies captured.'}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
+        // FIND (discover internal URLs/routes)
+        // ──────────────────────────────────────────────
+        case 'find': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+
+          const spinner = ora('Scanning target for internal routes and links...').start();
+          try {
+            const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
+            session.setDiscoveredUrls(urls);
+            spinner.succeed(`Discovered ${chalk.bold(urls.length)} internal route(s)`);
+
+            if (urls.length === 0) {
+              console.log(chalk.yellow('    No internal links found on this page.'));
+            } else {
+              console.log(chalk.bold.underline('\nDiscovered Routes:'));
+              urls.forEach((u, i) => {
+                console.log(`  ${chalk.dim(String(i + 1).padStart(3, ' ') + '.')} ${chalk.cyan(u.path)} ${chalk.dim('→')} ${u.fullUrl}`);
+              });
+              console.log('');
+            }
+          } catch (err) {
+            spinner.fail(chalk.red('URL discovery failed.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
+        // CRAWL <page> (scrape a specific discovered route)
+        // ──────────────────────────────────────────────
+        case 'crawl': {
+          if (!session.isLocked()) {
+            console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
+            break;
+          }
+
+          const query = args.join(' ').trim();
+          if (!query) {
+            console.log(chalk.red('[-] Usage: crawl <page-name-or-url>  (e.g., crawl dashboard or crawl /dashboard/transactions)'));
+            break;
+          }
+
+          let targetCrawlUrl = null;
+          let targetPathName = query;
+
+          if (query.startsWith('http://') || query.startsWith('https://')) {
+            targetCrawlUrl = query;
+            try { targetPathName = new URL(query).pathname; } catch { targetPathName = query; }
+          } else if (query.startsWith('/')) {
+            targetCrawlUrl = session.targetUrl.origin + query;
+            targetPathName = query;
+          } else {
+            // Auto-discover if not discovered yet
+            if (session.discoveredUrls.length === 0) {
+              const findSpinner = ora('Auto-discovering internal routes...').start();
+              try {
+                const urls = await discoverUrls(
+                  session.targetUrl.href,
+                  session.cookies,
+                  session.localStorageData,
+                  session.sessionStorageData,
+                  session.timeoutSeconds
+                );
+                session.setDiscoveredUrls(urls);
+                findSpinner.succeed(`Discovered ${urls.length} internal route(s)`);
+              } catch {
+                findSpinner.fail('Auto-discovery failed.');
+              }
+            }
+
+            const match = session.discoveredUrls.find(u =>
+              u.path.toLowerCase().includes(query.toLowerCase()) || u.fullUrl.toLowerCase().includes(query.toLowerCase())
+            );
+
+            if (match) {
+              targetCrawlUrl = match.fullUrl;
+              targetPathName = match.path;
+            } else {
+              targetCrawlUrl = new URL(query, session.targetUrl.origin).href;
+            }
+          }
+
+          const spinner = ora(`Crawling ${targetPathName}...`).start();
+          try {
+            const result = await crawlPages([targetCrawlUrl], session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
+            session.stagingDir = result.stagingDir;
+            session.scrapedFilesList = [...session.scrapedFilesList, ...result.fileList];
+            spinner.succeed(`Crawled ${chalk.cyan(targetPathName)} — ${result.fileList.length} file(s) captured`);
+
+            // Archive
+            const defaultOutput = await getDefaultOutputPath(`morena-crawl-${query}`);
+            rl.pause();
+            const dest = await askQuestion(rl, chalk.bold.yellow(`Save archive to (Enter for ${defaultOutput}): `));
+            rl.resume();
+            const outputPath = dest ? path.resolve(dest) : defaultOutput;
+
+            const archiveSpinner = ora('Compressing...').start();
+            const archive = await createZipArchive(result.stagingDir, outputPath);
+            session.stagingDir = null;
+            archiveSpinner.succeed(chalk.green.bold('[+] Archive generated.'));
+
+            const sizeMB = (archive.sizeBytes / (1024 * 1024)).toFixed(2);
+            console.log(`${chalk.dim('Destination:')} ${chalk.cyan(archive.archivePath)}`);
+            console.log(`${chalk.dim('Size:')} ${chalk.yellow(`${sizeMB} MB`)} (${archive.sizeBytes} bytes)\n`);
+          } catch (err) {
+            spinner.fail(chalk.red('Crawl failed.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
         // SHOW
         // ──────────────────────────────────────────────
         case 'show': {
@@ -190,7 +428,7 @@ export function startRepl() {
         }
 
         // ──────────────────────────────────────────────
-        // TAKE (Scrape target page and capture assets)
+        // TAKE (with interactive selector & take -all)
         // ──────────────────────────────────────────────
         case 'take': {
           if (!session.isLocked()) {
@@ -198,11 +436,14 @@ export function startRepl() {
             break;
           }
 
+          const isAll = args[0] === '-all';
+
+          // Step 1: Scrape current page
           const spinner = ora();
           let currentHtml, currentPageUrl;
           try {
             spinner.start('Launching headless browser and navigating to target...');
-            const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds);
+            const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies, session.localStorageData, session.sessionStorageData);
             currentHtml = result.html;
             currentPageUrl = result.pageUrl;
             spinner.succeed(`Scraped final runtime DOM from ${chalk.cyan(currentPageUrl)}`);
@@ -212,7 +453,87 @@ export function startRepl() {
             break;
           }
 
-          // Download frontend assets for target page
+          // Pre-scrape Login Form Detection
+          if (!session.isAuthenticated() && detectLoginForm(currentHtml)) {
+            console.log(chalk.bold.yellow('\n[!] Login form detected on target page!'));
+            rl.pause();
+            process.stdin.setRawMode && process.stdin.setRawMode(false);
+
+            try {
+              const { authChoice } = await inquirer.prompt([
+                {
+                  type: 'list',
+                  name: 'authChoice',
+                  message: 'A login form was detected. How would you like to proceed?',
+                  choices: [
+                    { name: '● Scrape current public page only (without logging in)', value: 'public' },
+                    { name: '● Log in first (automated credentials), then scrape fully', value: 'auto_login' },
+                    { name: '● Log in manually (interactive browser window), then scrape fully', value: 'manual_login' }
+                  ]
+                }
+              ]);
+
+              if (authChoice === 'auto_login') {
+                const username = await askQuestion(rl, chalk.bold.yellow('Username / Email: '));
+                const password = await askPassword(rl, chalk.bold.yellow('Password: '));
+                if (username && password) {
+                  const loginSpinner = ora('Attempting automated login...').start();
+                  const loginRes = await performLogin(session.targetUrl.href, username, password, session.timeoutSeconds);
+                  if (loginRes.success) {
+                    session.setCookies(loginRes.cookies);
+                    loginSpinner.succeed(chalk.green.bold(`[+] Authenticated successfully. ${loginRes.cookies.length} session cookies captured.`));
+                    // Re-scrape DOM with authenticated session cookies
+                    spinner.start('Re-scraping DOM in authenticated state...');
+                    const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies, session.localStorageData, session.sessionStorageData);
+                    currentHtml = result.html;
+                    currentPageUrl = result.pageUrl;
+                    spinner.succeed(`Captured authenticated DOM from ${chalk.cyan(currentPageUrl)}`);
+                  } else {
+                    loginSpinner.fail(chalk.red(`[-] Login failed: ${loginRes.error}. Proceeding with public page.`));
+                  }
+                }
+              } else if (authChoice === 'manual_login') {
+                console.log(chalk.cyan('[*] Opening browser window... Log in manually, then press ENTER or type \'continue\' here.'));
+                rl.pause();
+                const waitForContinue = () => {
+                  return new Promise((resolve) => {
+                    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+                    process.stdin.resume();
+                    process.stdout.write(chalk.bold.yellow('\nPress ENTER or type \'continue\' when you have logged in in the browser window... '));
+                    const handler = (data) => {
+                      const input = data.toString().trim().toLowerCase();
+                      if (input.includes('continue') || input === '' || data.toString().includes('\r') || data.toString().includes('\n')) {
+                        process.stdin.removeListener('data', handler);
+                        resolve();
+                      }
+                    };
+                    process.stdin.on('data', handler);
+                  });
+                };
+                const loginRes = await interactiveLogin(session.targetUrl.href, waitForContinue, session.timeoutSeconds);
+                rl.resume();
+                if (loginRes.success) {
+                  session.setCookies(loginRes.cookies);
+                  session.setStorage(loginRes.localStorage, loginRes.sessionStorage);
+                  console.log(chalk.green.bold(`[+] Session captured from browser. ${loginRes.cookies.length} cookies, ${Object.keys(loginRes.localStorage || {}).length} storage items stored.`));
+                  // Re-scrape DOM with authenticated session cookies
+                  spinner.start('Re-scraping DOM in authenticated state...');
+                  const result = await scrapeDOM(session.targetUrl.href, session.timeoutSeconds, session.cookies, session.localStorageData, session.sessionStorageData);
+                  currentHtml = result.html;
+                  currentPageUrl = result.pageUrl;
+                  spinner.succeed(`Captured authenticated DOM from ${chalk.cyan(currentPageUrl)}`);
+                } else {
+                  console.log(chalk.red('[-] Manual login failed or no cookies captured. Proceeding with public page.'));
+                }
+              }
+            } catch (err) {
+              console.log(chalk.red(`[-] Prompt error: ${err.message}`));
+            }
+
+            rl.resume();
+          }
+
+          // Step 2: Download assets for current page
           let staged;
           try {
             spinner.start('Hunting and downloading frontend CSS, JS, and image dependencies...');
@@ -225,6 +546,151 @@ export function startRepl() {
             spinner.fail(chalk.red('Asset download failed.'));
             console.log(chalk.red(`[-] Error: ${err.message}`));
             break;
+          }
+
+          // Step 3: If take -all, scrape everything
+          if (isAll) {
+            if (session.discoveredUrls.length === 0) {
+              spinner.start('Discovering internal routes for full scrape...');
+              try {
+                const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
+                session.setDiscoveredUrls(urls);
+                spinner.succeed(`Found ${urls.length} internal route(s)`);
+              } catch {
+                spinner.succeed('No additional routes found. Archiving current page only.');
+              }
+            }
+
+            if (session.discoveredUrls.length > 0) {
+              spinner.start(`Crawling ${session.discoveredUrls.length} additional pages...`);
+              try {
+                const allUrls = session.discoveredUrls.map(u => u.fullUrl);
+                const crawlResult = await crawlPages(allUrls, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
+                session.scrapedFilesList = [...session.scrapedFilesList, ...crawlResult.fileList];
+
+                // Merge crawled staging into main staging
+                const crawledEntries = await fs.readdir(crawlResult.stagingDir, { withFileTypes: true });
+                for (const entry of crawledEntries) {
+                  const src = path.join(crawlResult.stagingDir, entry.name);
+                  const dest = path.join(staged.stagingDir, entry.name);
+                  await fs.cp(src, dest, { recursive: true });
+                }
+                await fs.rm(crawlResult.stagingDir, { recursive: true, force: true });
+                spinner.succeed(`Crawled ${chalk.bold(session.discoveredUrls.length)} additional page(s)`);
+              } catch (err) {
+                spinner.fail(chalk.red('Multi-page crawl partially failed.'));
+                console.log(chalk.red(`[-] Error: ${err.message}`));
+              }
+            }
+
+            // Archive everything
+            const defaultOutput = await getDefaultOutputPath('morena-full-dump');
+            rl.pause();
+            const dest = await askQuestion(rl, chalk.bold.yellow(`Save archive to (Enter for ${defaultOutput}): `));
+            rl.resume();
+            const outputPath = dest ? path.resolve(dest) : defaultOutput;
+
+            spinner.start(`Compressing all scraped pages into archive...`);
+            const archive = await createZipArchive(session.stagingDir, outputPath);
+            session.stagingDir = null;
+            spinner.succeed(chalk.green.bold('[+] Packaging complete! Full archive generated.'));
+
+            const sizeMB = (archive.sizeBytes / (1024 * 1024)).toFixed(2);
+            console.log(`${chalk.dim('Destination:')} ${chalk.cyan(archive.archivePath)}`);
+            console.log(`${chalk.dim('Size:')} ${chalk.yellow(`${sizeMB} MB`)} (${archive.sizeBytes} bytes)\n`);
+            break;
+          }
+
+          // Step 4: Check for other pages (non -all mode)
+          if (session.discoveredUrls.length === 0) {
+            // Auto-discover
+            try {
+              const urls = await discoverUrls(session.targetUrl.href, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
+              session.setDiscoveredUrls(urls);
+            } catch {
+              // No routes found — proceed with single page
+            }
+          }
+
+          if (session.discoveredUrls.length > 0) {
+            console.log(chalk.cyan(`\n[*] ${session.discoveredUrls.length} other page(s) discovered on this target.`));
+
+            // Close readline temporarily for inquirer
+            rl.pause();
+            process.stdin.setRawMode && process.stdin.setRawMode(false);
+
+            try {
+              const { action } = await inquirer.prompt([
+                {
+                  type: 'list',
+                  name: 'action',
+                  message: 'What would you like to do?',
+                  choices: [
+                    { name: '● Scrape current page only', value: 'current' },
+                    { name: '● Select specific pages to scrape', value: 'select' },
+                    { name: '● Scrape ALL discovered pages', value: 'all' }
+                  ]
+                }
+              ]);
+
+              if (action === 'select') {
+                const { selectedPages } = await inquirer.prompt([
+                  {
+                    type: 'checkbox',
+                    name: 'selectedPages',
+                    message: 'Select pages to scrape (use Space to select, Enter to confirm):',
+                    choices: session.discoveredUrls.map(u => ({
+                      name: `${u.path} → ${u.fullUrl}`,
+                      value: u.fullUrl
+                    }))
+                  }
+                ]);
+
+                if (selectedPages.length > 0) {
+                  const sp = ora(`Crawling ${selectedPages.length} selected page(s)...`).start();
+                  try {
+                    const crawlResult = await crawlPages(selectedPages, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
+                    session.scrapedFilesList = [...session.scrapedFilesList, ...crawlResult.fileList];
+
+                    const crawledEntries = await fs.readdir(crawlResult.stagingDir, { withFileTypes: true });
+                    for (const entry of crawledEntries) {
+                      const src = path.join(crawlResult.stagingDir, entry.name);
+                      const dest = path.join(staged.stagingDir, entry.name);
+                      await fs.cp(src, dest, { recursive: true });
+                    }
+                    await fs.rm(crawlResult.stagingDir, { recursive: true, force: true });
+                    sp.succeed(`Crawled ${chalk.bold(selectedPages.length)} selected page(s)`);
+                  } catch (err) {
+                    sp.fail(chalk.red('Multi-page crawl failed.'));
+                    console.log(chalk.red(`[-] Error: ${err.message}`));
+                  }
+                }
+              } else if (action === 'all') {
+                const sp = ora(`Crawling ${session.discoveredUrls.length} page(s)...`).start();
+                try {
+                  const allUrls = session.discoveredUrls.map(u => u.fullUrl);
+                  const crawlResult = await crawlPages(allUrls, session.cookies, session.localStorageData, session.sessionStorageData, session.timeoutSeconds);
+                  session.scrapedFilesList = [...session.scrapedFilesList, ...crawlResult.fileList];
+
+                  const crawledEntries = await fs.readdir(crawlResult.stagingDir, { withFileTypes: true });
+                  for (const entry of crawledEntries) {
+                    const src = path.join(crawlResult.stagingDir, entry.name);
+                    const dest = path.join(staged.stagingDir, entry.name);
+                    await fs.cp(src, dest, { recursive: true });
+                  }
+                  await fs.rm(crawlResult.stagingDir, { recursive: true, force: true });
+                  sp.succeed(`Crawled ${chalk.bold(session.discoveredUrls.length)} page(s)`);
+                } catch (err) {
+                  sp.fail(chalk.red('Full crawl failed.'));
+                  console.log(chalk.red(`[-] Error: ${err.message}`));
+                }
+              }
+              // action === 'current' → just archive current page
+            } catch (err) {
+              console.log(chalk.red(`[-] Selector error: ${err.message}`));
+            }
+
+            rl.resume();
           }
 
           // Archive final result
@@ -316,6 +782,8 @@ export function startRepl() {
             console.log(`  ${chalk.dim('Target URL:')}       ${session.targetUrl.href}`);
             console.log(`  ${chalk.dim('Session Duration:')} ${minutes}m ${seconds}s`);
             console.log(`  ${chalk.dim('Timeout Limit:')}    ${session.timeoutSeconds} seconds`);
+            console.log(`  ${chalk.dim('Authenticated:')}    ${session.isAuthenticated() ? chalk.green('Yes (' + session.cookies.length + ' cookies)') : chalk.yellow('No')}`);
+            console.log(`  ${chalk.dim('Routes Found:')}     ${session.discoveredUrls.length > 0 ? chalk.green(session.discoveredUrls.length + ' route(s)') : 'Not scanned (use \'find\')'}`);
             console.log(
               `  ${chalk.dim('Scraped Assets:')}   ${
                 session.scrapedFilesList && session.scrapedFilesList.length > 0
@@ -382,23 +850,21 @@ export function startRepl() {
             console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
             break;
           }
-          const spinner = ora('Auditing HTTP security headers against OWASP guidelines...').start();
+          const spinner = ora('Auditing OWASP security headers...').start();
           try {
             const res = await fetch(session.targetUrl.href, {
               headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
             });
-            const auditResult = auditSecurityHeaders(res.headers);
+            const auditResults = auditSecurityHeaders(res.headers);
             spinner.stop();
 
-            console.log(chalk.bold.underline(`\nOWASP Response Header Security Audit for ${session.targetUrl.href}:`));
-            console.log(`  ${chalk.dim('Overall Grade:')}     ${auditResult.gradeColor(auditResult.grade)}`);
-            console.log(`  ${chalk.dim('Header Score:')}      ${auditResult.scoreColor(`${auditResult.score}/100`)}\n`);
-
-            console.log(chalk.bold('Security Header Checks:'));
-            auditResult.checks.forEach((check) => {
-              const symbol = check.passed ? chalk.green('✓') : chalk.red('✗');
-              const headerName = check.passed ? chalk.green(check.header) : chalk.red(check.header);
-              console.log(`  ${symbol} ${headerName.padEnd(30, ' ')} ${chalk.dim(check.details)}`);
+            console.log(chalk.bold.underline(`\nOWASP Security Headers Audit for ${session.targetUrl.href}:`));
+            auditResults.forEach(item => {
+              let badge = chalk.bgGreen.black(` [PASS] `);
+              if (item.status === 'WARN') badge = chalk.bgYellow.black(` [WARN] `);
+              if (item.status === 'FAIL') badge = chalk.bgRed.white.bold(` [FAIL] `);
+              console.log(`${badge} ${chalk.bold(item.header)}: ${chalk.dim(item.value)}`);
+              console.log(`         ${chalk.dim('➜')} ${chalk.yellow(item.recommendation)}`);
             });
             console.log('');
           } catch (err) {
@@ -409,73 +875,74 @@ export function startRepl() {
         }
 
         // ──────────────────────────────────────────────
-        // SECRETS (Scanner)
+        // SECRETS
         // ──────────────────────────────────────────────
         case 'secrets': {
           if (!session.isLocked()) {
             console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
             break;
           }
-          const spinner = ora('Scanning target source and frontend assets for secrets...').start();
+          const spinner = ora('Scanning scraped assets & DOM for sensitive keys & tokens...').start();
           try {
-            let contentToScan = session.stagingDir;
-            if (!contentToScan) {
+            let targetInput = session.stagingDir;
+            if (!targetInput) {
               const res = await fetch(session.targetUrl.href, {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
               });
-              contentToScan = await res.text();
+              targetInput = await res.text();
             }
 
-            const findings = await scanForSecrets(contentToScan);
+            const findings = await scanForSecrets(targetInput);
             spinner.stop();
 
-            console.log(chalk.bold.underline(`\nSecret & Sensitive Information Findings for ${session.targetUrl.href}:`));
+            console.log(chalk.bold.underline(`\nSecret & Sensitive Pattern Scanner Results (${findings.length} findings):`));
             if (findings.length === 0) {
-              console.log(chalk.green('  ✓ No hardcoded secrets, API keys, or sensitive comments detected.\n'));
+              console.log(chalk.green('  [+] No exposed secret patterns detected in target content.'));
             } else {
-              findings.forEach((f) => {
-                console.log(`  ${chalk.red.bold('!')} ${chalk.yellow(f.rule.padEnd(25, ' '))} ${chalk.dim('→')} ${chalk.cyan(f.match)}`);
+              findings.forEach((f, i) => {
+                console.log(`  ${chalk.dim(i + 1 + '.')} ${chalk.red.bold(`[${f.type}]`)} ${chalk.cyan(f.file)} (line ${f.line})`);
+                console.log(`     ${chalk.yellow(f.match)}`);
               });
-              console.log('');
             }
+            console.log('');
           } catch (err) {
-            spinner.fail(chalk.red('Secret scanning failed.'));
+            spinner.fail(chalk.red('Secrets scan failed.'));
             console.log(chalk.red(`[-] Error: ${err.message}`));
           }
           break;
         }
 
         // ──────────────────────────────────────────────
-        // ENDPOINTS (Extractor)
+        // ENDPOINTS
         // ──────────────────────────────────────────────
         case 'endpoints': {
           if (!session.isLocked()) {
             console.log(chalk.yellow('[-] No target locked. Use \'target <url>\' first.'));
             break;
           }
-          const spinner = ora('Extracting hidden REST endpoints, API routes, and WebSockets...').start();
+          const spinner = ora('Extracting API routes and WebSockets from JavaScript assets...').start();
           try {
-            let contentToScan = session.stagingDir;
-            if (!contentToScan) {
+            let targetInput = session.stagingDir;
+            if (!targetInput) {
               const res = await fetch(session.targetUrl.href, {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
               });
-              contentToScan = await res.text();
+              targetInput = await res.text();
             }
 
-            const endpoints = await extractEndpoints(contentToScan);
+            const extracted = await extractEndpoints(targetInput);
             spinner.stop();
 
-            console.log(chalk.bold.underline(`\nExtracted API Endpoints & Routes for ${session.targetUrl.href}:`));
-            if (endpoints.length === 0) {
-              console.log(chalk.yellow('  No API endpoints or routes extracted.\n'));
-            } else {
-              endpoints.forEach((ep) => {
-                const methodColor = ep.method === 'WS' ? chalk.magenta : chalk.blue;
-                console.log(`  ${methodColor(ep.method.padEnd(6, ' '))} ${chalk.cyan(ep.url)}`);
-              });
-              console.log('');
+            console.log(chalk.bold.underline(`\nExtracted API Routes & Connections for ${session.targetUrl.href}:`));
+            console.log(`  ${chalk.bold('REST / API Routes')} (${extracted.restRoutes.length}):`);
+            extracted.restRoutes.slice(0, 15).forEach(r => console.log(`    ${chalk.dim('•')} ${chalk.cyan(r)}`));
+            if (extracted.restRoutes.length > 15) console.log(chalk.dim(`    ... and ${extracted.restRoutes.length - 15} more.`));
+
+            if (extracted.sockets.length > 0) {
+              console.log(`  ${chalk.bold('WebSockets Connections')} (${extracted.sockets.length}):`);
+              extracted.sockets.forEach(ws => console.log(`    ${chalk.dim('•')} ${chalk.yellow(ws)}`));
             }
+            console.log('');
           } catch (err) {
             spinner.fail(chalk.red('Endpoint extraction failed.'));
             console.log(chalk.red(`[-] Error: ${err.message}`));
@@ -583,8 +1050,14 @@ export function startRepl() {
           console.log(`  ${chalk.yellow('scession -time')}     - Display session duration since lock`);
           console.log(`  ${chalk.yellow('info')}               - Display session status summary card`);
           console.log(`  ${chalk.yellow('set-timeout <sec>')}  - Dynamically set Puppeteer timeout limit`);
-          console.log(chalk.dim('  ── Scraping & Archiving ──'));
-          console.log(`  ${chalk.yellow('take')}               - Scrape target page and capture frontend assets`);
+          console.log(chalk.dim('  ── Authentication ──'));
+          console.log(`  ${chalk.yellow('login')}              - Automated form login (prompts for credentials)`);
+          console.log(`  ${chalk.yellow('interactive')}        - Open visible browser for manual login`);
+          console.log(chalk.dim('  ── Discovery & Scraping ──'));
+          console.log(`  ${chalk.yellow('find')}               - Discover all internal routes on the target`);
+          console.log(`  ${chalk.yellow('crawl <page>')}       - Scrape a specific discovered route`);
+          console.log(`  ${chalk.yellow('take')}               - Scrape current page (with page selector if routes found)`);
+          console.log(`  ${chalk.yellow('take -all')}          - Scrape current page + ALL discovered routes`);
           console.log(`  ${chalk.yellow('show')}               - Display hierarchical tree of scraped files`);
           console.log(chalk.dim('  ── Security Recon & Auditing ──'));
           console.log(`  ${chalk.yellow('tech-stack')}         - Fingerprint frameworks, libraries, CDNs, & servers`);
