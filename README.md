@@ -11,14 +11,14 @@
 
 # MORENA REPL
 
-**Automated Client-Sidedd Web Archiving, Security Reconnaissance & Asset Auditing Tool**
+**Automated Client-Side Web Archiving, Security Reconnaissance & Asset Auditing Tool**
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg?style=for-the-badge&logo=node.js)](https://nodejs.org)
 [![Platform Support](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg?style=for-the-badge&logo=linux)](https://github.com/antoniusjairus4/Morena)
 [![License](https://img.shields.io/badge/license-ISC-orange.svg?style=for-the-badge)](LICENSE)
 [![Puppeteer Automation](https://img.shields.io/badge/engine-Puppeteer%20v22-red.svg?style=for-the-badge&logo=googlechrome)](https://pptr.dev)
 
-*Morena is a stateful command-line REPL tool designed for authorized web asset auditing, DOM reconstruction, route discovery, secret scanning, and security reporting.*
+*Morena is a stateful command-line REPL tool designed for authorized web asset auditing, DOM reconstruction, SPA route discovery, session state persistence, secret scanning, and security reporting.*
 
 </div>
 
@@ -28,11 +28,13 @@
 
 | Feature | Description |
 | :--- | :--- |
-| **🔒 Persistent Session Locking** | Lock onto a target host (`morena > target <url>`) and maintain active session timers. |
-| **🔑 Dual Authentication Modes** | Automated form credential login (`login`) & manual browser login (`interactive`) with automatic session cookie capture. |
-| **🔎 Route & Link Discovery** | Discover all same-origin internal routes on any web application (`find`). |
-| **🔍 Tech Stack Fingerprinting** | Identify frameworks (React, Next, Vue), UI libraries, CDNs, and web servers (`tech-stack`). |
-| **🛡️ OWASP Header Auditor** | Evaluate target HTTP headers (CSP, HSTS, CORS, Clickjacking flags) (`audit`). |
+| **🔒 Persistent Session Locking** | Lock onto a target host (`morena > target <url>`) with active session tracking. |
+| **🔑 Unified Singleton Session State** | Captures and injects both **Cookies** and **Web Storage** (`localStorage` & `sessionStorage`) across all browser subroutines. |
+| **🌐 Dual Authentication Modes** | Automated credential form login (`login`) & manual browser login (`interactive`) with full session capture. |
+| **🔎 SPA Route & Bundle Discovery** | Scans DOM anchors, performance resources, inline scripts, and external JS bundles (`/assets/*.js`) to extract hidden SPA routes (`find`). |
+| **🕷️ Smart Page Crawler** | Crawl specific routes by name or direct URL (`crawl /dashboard/transactions` or `crawl <url>`) with auto-route discovery. |
+| **🔍 Tech Stack Fingerprinting** | Identify frameworks (React, Next, Vue, Svelte), UI libraries, CDNs, and web servers (`tech-stack`). |
+| **🛡️ OWASP Header Auditor** | Evaluate target HTTP response headers (CSP, HSTS, CORS, Clickjacking flags) (`audit`). |
 | **🔑 Secret & Token Scanner** | Scan JS bundles for leaked API keys, tokens, internal IPs & developer comments (`secrets`). |
 | **🌐 API Route Extractor** | Extract hidden REST routes, endpoints, and WebSockets from JavaScript assets (`endpoints`). |
 | **📄 Security Report Generator** | Export structured HTML security audit reports directly to `~/Downloads` (`report`). |
@@ -45,23 +47,23 @@
 
 ```mermaid
 flowchart TD
-    A[Launch Animated Morena REPL] --> B[Lock Target URL\n'target <url>']
+    A[Launch Morena REPL] --> B[Lock Target URL\n'target <url>']
     B --> C{Detect Login / Auth Options}
     C -- Login Detected --> D[Choose Auth Mode]
     D --> E[Automated Form Login\n'login']
-    D --> F[Manual Chrome Browser\n'interactive']
-    E --> G[Capture Session Cookies]
+    D --> F[Manual Interactive Chrome Window\n'interactive']
+    E --> G[Unified Session State Manager\nCookies + LocalStorage + SessionStorage]
     F --> G
-    C -- Public Page --> H[Scrape Runtime DOM & Assets]
+    C -- Public Page --> H[State-Aware Puppeteer Engine\n'applyBrowserState']
     G --> H
-    H --> I[Discover Internal Routes\n'find']
+    H --> I[SPA Route & Bundle Decompiler\n'find']
     I --> J[Run Security Scanners]
     J --> K1[Fingerprint Tech\n'tech-stack']
     J --> K2[Audit Security Headers\n'audit']
     J --> K3[Scan Leaked Secrets\n'secrets']
     J --> K4[Extract API Endpoints\n'endpoints']
     J --> L[Generate Audit Report\n'report']
-    J --> M[Package Assets\n'take -all']
+    J --> M[Package Assets\n'take -all' / 'crawl']
 ```
 
 ---
@@ -137,23 +139,23 @@ morena
 | :--- | :--- | :--- |
 | `target` | `target palindrome.antoniusjairus.in` | Lock target host and start session timer |
 | `login` | `login` | Automated form login (prompts for username & password) |
-| `interactive` | `interactive` | Opens visible Chrome window for manual browser login |
-| `find` | `find` | Discovers all internal routes (`/dashboard`, `/profile`, etc.) |
-| `crawl` | `crawl dashboard` | Scrapes a specific discovered route |
-| `take` | `take` | Scrapes target DOM + assets; triggers page selector |
-| `take -all` | `take -all` | Scrapes current page AND all discovered routes into one ZIP |
-| `tech-stack` | `tech-stack` | Fingerprints frameworks (React, Next), UI libs, CDNs, & servers |
+| `interactive` | `interactive` | Opens visible Chrome window for manual browser login & full storage capture |
+| `find` | `find` | Discovers all internal routes (`/dashboard`, `/profile`, etc.) from DOM & JS bundles |
+| `crawl` | `crawl dashboard` or `crawl /dashboard/transactions` | Scrapes a specific route, path, or direct URL with auto-route discovery |
+| `take` | `take` | Scrapes target DOM + assets; triggers interactive page selector |
+| `take -all` | `take -all` | Scrapes current page AND all discovered routes into one ZIP archive |
+| `tech-stack` | `tech-stack` | Fingerprints frameworks (React, Next, Vue), UI libs, CDNs, & web servers |
 | `secrets` | `secrets` | Scans JS assets for leaked API keys, tokens & developer comments |
 | `endpoints` | `endpoints` | Extracts hidden REST API routes & WebSockets from JS bundles |
-| `audit` | `audit` | Audits response headers against OWASP guidelines (CSP, CORS) |
+| `audit` | `audit` | Audits response headers against OWASP guidelines (CSP, CORS, HSTS) |
 | `report` | `report` | Generates formatted HTML security audit report in `~/Downloads` |
 | `show` | `show` | Renders a hierarchical ASCII file tree of scraped assets |
-| `scession -time`| `scession -time` | Displays elapsed session duration since target lock |
+| `session -time`| `session -time` | Displays elapsed session duration since target lock |
 | `info` | `info` | Displays formatted session status card |
 | `headers` | `headers` | Fetches target HTTP response headers |
 | `status` | `status` | Pings target URL and reports HTTP status and latency |
 | `clean` | `clean` | Deletes temporary staging files and caches |
-| `history` | `history` | Displays list of commands executed in session |
+| `history` | `history` | Displays list of commands executed in current session |
 | `exit-now` | `exit-now` | Cleans staging directories and exits Morena cleanly |
 
 ---
@@ -164,9 +166,27 @@ morena
 morena > target palindrome.antoniusjairus.in
 [+] Target identified and locked: https://palindrome.antoniusjairus.in/
 
+morena > interactive
+[*] Opening browser window... Log in manually, then press ENTER here.
+[+] Session state captured successfully (0 cookies, 8 storage items).
+
+morena > find
+Scanning target for internal routes and links...
+✔ Discovered 15 internal route(s)
+  1. /dashboard → https://palindrome.antoniusjairus.in/dashboard
+  2. /dashboard/transactions → https://palindrome.antoniusjairus.in/dashboard/transactions
+  3. /dashboard/splits → https://palindrome.antoniusjairus.in/dashboard/splits
+  4. /dashboard/assets → https://palindrome.antoniusjairus.in/dashboard/assets
+  ...
+
+morena > crawl /dashboard/transactions
+Crawling /dashboard/transactions...
+✔ Crawled /dashboard/transactions — 6 file(s) captured
+[+] Archive generated: ~/Downloads/morena-crawl-dashboard-transactions.zip
+
 morena > tech-stack
 Technology Stack Fingerprints for https://palindrome.antoniusjairus.in/:
-  Frameworks:       React.js, Next.js
+  Frameworks:       React.js, Next.js, Vite
   UI Libraries:     Tailwind CSS
   Server Headers:   Server: Vercel
 
@@ -179,25 +199,9 @@ OWASP Security Headers Audit for https://palindrome.antoniusjairus.in/:
  [WARN] X-Frame-Options: Missing
          ➜ Set X-Frame-Options to DENY or SAMEORIGIN to prevent Clickjacking.
 
-morena > secrets
-Secret & Sensitive Pattern Scanner Results (2 findings):
-  1. [Developer TODO/FIXME Comment] app.js (line 42)
-     // TODO: Fix authentication fallback token before deployment
-  2. [Internal IP Address] config.js (line 108)
-     172.16.0.2
-
-morena > endpoints
-Extracted API Routes & Connections for https://palindrome.antoniusjairus.in/:
-  REST / API Routes (4):
-    • /api/v1/auth/login
-    • /api/v1/user/profile
-    • /api/v1/transactions
-    • /api/v1/analytics
-
 morena > report
 ✔ Security audit report generated!
-Location: /home/jairus/Downloads/morena-report-2026-08-05.html
-Summary:  2 Header Failures; 2 Secret Findings
+Location: /home/jairus/Downloads/morena-report-2026-08-10.html
 ```
 
 ---
