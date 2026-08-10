@@ -3,35 +3,47 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import * as cheerio from 'cheerio';
+import { findChromePath } from './auth.js';
+import { session } from './session.js';
 
 /**
- * Resolves system Chrome executable path.
+ * Creates a Puppeteer page instance with session cookies & storage pre-injected.
  */
-async function findChromePath() {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
-  }
-  const paths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium-browser'];
-  for (const p of paths) {
-    try {
-      await fs.access(p);
-      return p;
-    } catch {
-      // next
-    }
-  }
-  return undefined;
+export async function createAuthenticatedPage() {
+  const executablePath = await findChromePath();
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    ...(executablePath && { executablePath })
+  });
+
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.setUserAgent(
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+  );
+
+  await session.applyBrowserState(page);
+  return { browser, page };
 }
 
 /**
  * Discovers all same-origin internal links on the target page.
  *
  * @param {string} targetUrl - The base page URL to scan for links.
- * @param {object[]} cookies - Puppeteer cookies to inject (for authenticated pages).
+ * @param {object[]} cookies - Optional cookies (uses session if empty).
+ * @param {object} localStorageData - Optional localStorage (uses session if empty).
+ * @param {object} sessionStorageData - Optional sessionStorage (uses session if empty).
  * @param {number} timeoutSeconds - Navigation timeout.
  * @returns {Promise<{ path: string, fullUrl: string }[]>}
  */
 export async function discoverUrls(targetUrl, cookies = [], localStorageData = {}, sessionStorageData = {}, timeoutSeconds = 30) {
+  const urlToScan = targetUrl || (session.targetUrl ? session.targetUrl.href : null);
+  if (!urlToScan) {
+    console.log('[-] Error: No target URL specified.');
+    return [];
+  }
+
   let browser;
   try {
     const executablePath = await findChromePath();
@@ -47,12 +59,10 @@ export async function discoverUrls(targetUrl, cookies = [], localStorageData = {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     );
 
-    // Inject cookies if authenticated
+    // Apply custom parameters or fallback to global session state
     if (cookies && cookies.length > 0) {
       await page.setCookie(...cookies);
     }
-
-    // Inject storage if authenticated
     if ((localStorageData && Object.keys(localStorageData).length > 0) || (sessionStorageData && Object.keys(sessionStorageData).length > 0)) {
       await page.evaluateOnNewDocument((local, session) => {
         if (local) {
@@ -66,14 +76,19 @@ export async function discoverUrls(targetUrl, cookies = [], localStorageData = {
           }
         }
       }, localStorageData, sessionStorageData);
+    } else {
+      await session.applyBrowserState(page);
     }
 
-    await page.goto(targetUrl, {
+    await page.goto(urlToScan, {
       waitUntil: 'networkidle2',
       timeout: timeoutSeconds * 1000
     });
 
-    const baseOrigin = new URL(targetUrl).origin;
+    // Allow SPA hydration to complete
+    await new Promise(r => setTimeout(r, 1500));
+
+    const baseOrigin = new URL(urlToScan).origin;
 
     // 1. Extract DOM links, data attributes, inline scripts, and script bundle URLs
     const { hrefs: domHrefs, scriptSrcs } = await page.evaluate(() => {
@@ -186,14 +201,12 @@ export async function discoverUrls(targetUrl, cookies = [], localStorageData = {
       try {
         const parsed = new URL(href);
 
-        // Skip non-HTTP, fragment-only, or external links
         if (!['http:', 'https:'].includes(parsed.protocol)) continue;
         if (parsed.origin !== baseOrigin) continue;
 
-        // Normalize: remove hash, trailing slash for dedup
         parsed.hash = '';
         let normalized = parsed.href.replace(/\/+$/, '');
-        if (normalized === baseOrigin) continue; // Skip the base URL itself
+        if (normalized === baseOrigin) continue;
 
         if (seen.has(normalized)) continue;
         seen.add(normalized);
@@ -208,8 +221,8 @@ export async function discoverUrls(targetUrl, cookies = [], localStorageData = {
       }
     }
 
-    // Sort by path for clean display
     results.sort((a, b) => a.path.localeCompare(b.path));
+    session.setDiscoveredUrls(results);
     return results;
   } finally {
     if (browser) await browser.close();
@@ -221,6 +234,8 @@ export async function discoverUrls(targetUrl, cookies = [], localStorageData = {
  *
  * @param {string[]} urls - Array of full URLs to scrape.
  * @param {object[]} cookies - Puppeteer cookies to inject.
+ * @param {object} localStorageData - localStorage object.
+ * @param {object} sessionStorageData - sessionStorage object.
  * @param {number} timeoutSeconds - Navigation timeout.
  * @returns {Promise<{ stagingDir: string, fileList: string[], pagesScraped: number }>}
  */
@@ -262,6 +277,8 @@ export async function crawlPages(urls, cookies = [], localStorageData = {}, sess
               }
             }
           }, localStorageData, sessionStorageData);
+        } else {
+          await session.applyBrowserState(page);
         }
 
         const response = await page.goto(url, {
@@ -277,13 +294,11 @@ export async function crawlPages(urls, cookies = [], localStorageData = {}, sess
         const html = await page.content();
         const parsed = new URL(url);
 
-        // Create page subdirectory based on route path
         let pageDirName = parsed.pathname.replace(/^\//, '').replace(/\//g, '_') || 'root';
         pageDirName = pageDirName.replace(/[^a-zA-Z0-9_-]/g, '_');
         const pageDir = path.join(stagingDir, 'pages', pageDirName);
         await fs.mkdir(pageDir, { recursive: true });
 
-        // Parse and download assets for this page
         const $ = cheerio.load(html);
         const baseUrl = new URL(url);
         const assetsToDownload = [];
@@ -318,7 +333,6 @@ export async function crawlPages(urls, cookies = [], localStorageData = {}, sess
         processAttr('source[src]', 'src', 'media');
         processAttr('link[rel*="icon"]', 'href', 'icons');
 
-        // Download assets concurrently
         await Promise.all(assetsToDownload.map(async (asset) => {
           try {
             await fs.mkdir(path.dirname(asset.localPath), { recursive: true });
@@ -333,10 +347,8 @@ export async function crawlPages(urls, cookies = [], localStorageData = {}, sess
           }
         }));
 
-        // Save page HTML
         await fs.writeFile(path.join(pageDir, 'index.html'), $.html(), 'utf8');
 
-        // Track files
         allFiles.push(`pages/${pageDirName}/index.html`);
         for (const asset of assetsToDownload) {
           const rel = path.relative(stagingDir, asset.localPath);

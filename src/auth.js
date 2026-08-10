@@ -1,6 +1,7 @@
 import puppeteer from 'puppeteer';
 import fs from 'fs/promises';
 import * as cheerio from 'cheerio';
+import { session } from './session.js';
 
 /**
  * Detects if DOM HTML contains a login form, password fields, or login/auth buttons/links.
@@ -52,13 +53,20 @@ export function detectLoginForm(html) {
 }
 
 /**
- * Resolves system Chrome executable path.
+ * Resolves system Chrome executable path across OS environments.
  */
-async function findChromePath() {
+export async function findChromePath() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
-  const paths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium-browser'];
+  const paths = [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+  ];
   for (const p of paths) {
     try {
       await fs.access(p);
@@ -72,14 +80,6 @@ async function findChromePath() {
 
 /**
  * Automated login via form detection.
- * Navigates to targetUrl, finds username/password inputs, fills them, submits,
- * and captures all cookies from the authenticated session.
- *
- * @param {string} targetUrl - The login page URL.
- * @param {string} username - Username or email.
- * @param {string} password - Password.
- * @param {number} timeoutSeconds - Navigation timeout.
- * @returns {Promise<{ cookies: object[], success: boolean, error?: string }>}
  */
 export async function performLogin(targetUrl, username, password, timeoutSeconds = 30) {
   let browser;
@@ -119,7 +119,6 @@ export async function performLogin(targetUrl, username, password, timeoutSeconds
       if (usernameField) break;
     }
 
-    // If username input is not immediately visible, look for a Sign In / Log In button/link and click it!
     if (!usernameField) {
       const authRegex = /^(sign in|log in|login|signin|sign-in|log-in|get started)$/i;
       const clickableElements = await page.$$('button, a, input[type="button"]');
@@ -128,12 +127,11 @@ export async function performLogin(targetUrl, username, password, timeoutSeconds
         const href = (await page.evaluate(node => node.getAttribute('href'), el) || '').trim();
         if (authRegex.test(text) || href.includes('login') || href.includes('signin')) {
           await el.click().catch(() => {});
-          await new Promise(r => setTimeout(r, 1500)); // Wait for login modal / form to render
+          await new Promise(r => setTimeout(r, 1500));
           break;
         }
       }
 
-      // Re-scan for username input
       for (const sel of usernameSelectors) {
         usernameField = await page.$(sel);
         if (usernameField) break;
@@ -144,19 +142,16 @@ export async function performLogin(targetUrl, username, password, timeoutSeconds
       return { cookies: [], success: false, error: 'Could not detect username/email input field.' };
     }
 
-    // Auto-detect password field
     const passwordField = await page.$('input[type="password"]');
     if (!passwordField) {
       return { cookies: [], success: false, error: 'Could not detect password input field.' };
     }
 
-    // Fill credentials
     await usernameField.click({ clickCount: 3 });
     await usernameField.type(username, { delay: 50 });
     await passwordField.click({ clickCount: 3 });
     await passwordField.type(password, { delay: 50 });
 
-    // Find and click submit button
     const submitSelectors = [
       'button[type="submit"]',
       'input[type="submit"]',
@@ -178,103 +173,80 @@ export async function performLogin(targetUrl, username, password, timeoutSeconds
     }
 
     if (!submitted) {
-      // Fallback: press Enter on password field
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: timeoutSeconds * 1000 }).catch(() => {}),
         page.keyboard.press('Enter')
       ]);
     }
 
-    // Wait a moment for any redirects to settle
     await new Promise(r => setTimeout(r, 2000));
 
-    const cookies = await page.cookies();
-    if (cookies.length === 0) {
-      return { cookies: [], success: false, error: 'Login may have failed — no session cookies captured.' };
-    }
-
-    return { cookies, success: true };
+    await session.captureBrowserState(page);
+    return {
+      cookies: session.cookies,
+      localStorage: session.localStorageData,
+      sessionStorage: session.sessionStorageData,
+      success: session.isAuthenticated()
+    };
   } catch (error) {
-    return { cookies: [], success: false, error: error.message };
+    return { cookies: [], localStorage: {}, sessionStorage: {}, success: false, error: error.message };
   } finally {
     if (browser) await browser.close();
   }
 }
 
 /**
- * Interactive (visible) browser login.
+ * Interactive (visible) browser login with full state capture.
  * Opens a non-headless Chrome window for the user to log in manually.
- * Returns captured cookies once the user signals completion.
+ * Snapshots cookies and Web Storage into session singleton upon completion.
  *
  * @param {string} targetUrl - The page URL to open.
- * @param {Function} waitForContinue - Async function that resolves when user types 'continue'.
+ * @param {Function} waitForContinue - Async function that resolves when user signals completion.
  * @param {number} timeoutSeconds - Navigation timeout.
- * @returns {Promise<{ cookies: object[], success: boolean, error?: string }>}
+ * @returns {Promise<{ cookies: object[], localStorage: object, sessionStorage: object, success: boolean, error?: string }>}
  */
 export async function interactiveLogin(targetUrl, waitForContinue, timeoutSeconds = 30) {
   let browser;
   try {
+    const url = targetUrl || (session.targetUrl ? session.targetUrl.href : null);
+    if (!url) {
+      return { cookies: [], localStorage: {}, sessionStorage: {}, success: false, error: 'No target URL set.' };
+    }
+
     const executablePath = await findChromePath();
     browser = await puppeteer.launch({
       headless: false,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized'],
       defaultViewport: null,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized'],
       ...(executablePath && { executablePath })
     });
 
     const page = await browser.newPage();
-    await page.goto(targetUrl, {
+
+    // If partial session state exists, apply it
+    await session.applyBrowserState(page);
+
+    await page.goto(url, {
       waitUntil: 'networkidle2',
       timeout: timeoutSeconds * 1000
     });
 
-    // Wait for user to manually log in and type 'continue'
+    // Wait for user to complete manual login in the visible browser
     await waitForContinue();
 
-    // Small delay to ensure session tokens/cookies are written to storage
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 1500));
 
-    // Capture cookies from all active browser targets
-    const pages = await browser.pages();
-    let allCookies = [];
-    for (const p of pages) {
-      try {
-        const c = await p.cookies();
-        allCookies = allCookies.concat(c);
-      } catch {
-        // ignore closed pages
-      }
+    // Capture cookies, localStorage, and sessionStorage directly into session singleton
+    await session.captureBrowserState(page);
+    if (page.url()) {
+      session.setTarget(page.url());
     }
-
-    // Fallback: also try page.cookies() directly
-    if (allCookies.length === 0) {
-      allCookies = await page.cookies();
-    }
-
-    // Extract localStorage & sessionStorage data
-    const localStorageData = await page.evaluate(() => {
-      const data = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        data[key] = localStorage.getItem(key);
-      }
-      return data;
-    }).catch(() => ({}));
-
-    const sessionStorageData = await page.evaluate(() => {
-      const data = {};
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const key = sessionStorage.key(i);
-        data[key] = sessionStorage.getItem(key);
-      }
-      return data;
-    }).catch(() => ({}));
 
     return {
-      cookies: allCookies,
-      localStorage: localStorageData,
-      sessionStorage: sessionStorageData,
-      success: allCookies.length > 0 || Object.keys(localStorageData).length > 0
+      cookies: session.cookies,
+      localStorage: session.localStorageData,
+      sessionStorage: session.sessionStorageData,
+      success: session.isAuthenticated()
     };
   } catch (error) {
     return { cookies: [], localStorage: {}, sessionStorage: {}, success: false, error: error.message };
