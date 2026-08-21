@@ -23,6 +23,8 @@ class SessionManager {
     this.localStorageData = {};
     this.sessionStorageData = {};
     this.discoveredUrls = [];
+    this.brightDataApiToken = process.env.BRIGHTDATA_API_TOKEN || null;
+    this.brightDataCollectorId = process.env.BRIGHTDATA_COLLECTOR_ID || null;
   }
 
   isLocked() {
@@ -148,6 +150,18 @@ class SessionManager {
       await cleanupStaging(this.stagingDir);
       this.stagingDir = null;
     }
+  }
+
+  setBrightDataConfig(token, collectorId) {
+    if (token) this.brightDataApiToken = token.trim();
+    if (collectorId) this.brightDataCollectorId = collectorId.trim();
+  }
+
+  getBrightDataConfig() {
+    return {
+      token: this.brightDataApiToken || process.env.BRIGHTDATA_API_TOKEN || null,
+      collectorId: this.brightDataCollectorId || process.env.BRIGHTDATA_COLLECTOR_ID || null
+    };
   }
 
   async resetSession() {

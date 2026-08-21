@@ -18,6 +18,7 @@ import { scanForSecrets } from './analyzer/secretsScanner.js';
 import { extractEndpoints } from './analyzer/endpointExtractor.js';
 import { auditSecurityHeaders } from './analyzer/headerAuditor.js';
 import { generateReport } from './reporter.js';
+import { triggerBrightDataCollector } from './analyzer/brightdataCollector.js';
 
 /**
  * Builds a nested tree object from relative file paths.
@@ -951,6 +952,111 @@ export function startRepl() {
         }
 
         // ──────────────────────────────────────────────
+        // BRIGHTDATA / COLLECTOR (Cloud Scraper API)
+        // ──────────────────────────────────────────────
+        case 'collector':
+        case 'brightdata': {
+          let subCmd = args[0] ? args[0].toLowerCase() : '';
+          
+          if (subCmd === 'config') {
+            const token = args[1];
+            const collectorId = args[2];
+            if (!token || !collectorId) {
+              console.log(chalk.red('[-] Usage: collector config <token> <collector_id>'));
+            } else {
+              session.setBrightDataConfig(token, collectorId);
+              console.log(chalk.green.bold(`[+] Bright Data API configuration saved for current session.`));
+              console.log(`    ${chalk.dim('Collector ID:')} ${chalk.cyan(collectorId)}`);
+            }
+            break;
+          }
+
+          let collectorId = session.getBrightDataConfig().collectorId;
+          let token = session.getBrightDataConfig().token;
+          let targetUrlStr = null;
+
+          if (subCmd === 'trigger') {
+            if (args[1] && args[1].startsWith('c_')) {
+              collectorId = args[1];
+              targetUrlStr = args[2] || null;
+            } else if (args[1]) {
+              targetUrlStr = args[1];
+            }
+          } else if (subCmd.startsWith('c_')) {
+            collectorId = subCmd;
+            targetUrlStr = args[1] || null;
+          } else if (subCmd.startsWith('http://') || subCmd.startsWith('https://')) {
+            targetUrlStr = subCmd;
+          }
+
+          if (!targetUrlStr) {
+            if (session.isLocked()) {
+              targetUrlStr = session.targetUrl.href;
+            } else {
+              rl.pause();
+              targetUrlStr = await askQuestion(rl, chalk.bold.yellow('Target URL to collect: '));
+              rl.resume();
+            }
+          }
+
+          if (!targetUrlStr) {
+            console.log(chalk.red('[-] Target URL is required. Lock target first with \'target <url>\' or pass URL.'));
+            break;
+          }
+
+          if (!token) {
+            rl.pause();
+            token = await askQuestion(rl, chalk.bold.yellow('Bright Data API Bearer Token: '));
+            rl.resume();
+          }
+
+          if (!collectorId) {
+            rl.pause();
+            collectorId = await askQuestion(rl, chalk.bold.yellow('Bright Data Collector ID (e.g. c_xxxxxx): '));
+            rl.resume();
+          }
+
+          if (!token || !collectorId) {
+            console.log(chalk.red('[-] Both API Token and Collector ID are required to trigger execution.'));
+            break;
+          }
+
+          session.setBrightDataConfig(token, collectorId);
+
+          const spinner = ora(`Triggering Bright Data collector (${collectorId}) for ${targetUrlStr}...`).start();
+
+          try {
+            const result = await triggerBrightDataCollector({
+              token,
+              collectorId,
+              urls: targetUrlStr,
+              queueNext: 1
+            });
+
+            if (result.success) {
+              spinner.succeed(chalk.green.bold('[+] Bright Data Collector job triggered successfully!'));
+              console.log(`  ${chalk.dim('Collector ID:')} ${chalk.cyan(collectorId)}`);
+              console.log(`  ${chalk.dim('Target URL:')}   ${chalk.yellow(targetUrlStr)}`);
+              console.log(`  ${chalk.dim('Status Code:')}  ${chalk.green(result.statusCode)}`);
+              if (result.responseData) {
+                console.log(`  ${chalk.dim('Response:')}     ${chalk.dim(JSON.stringify(result.responseData))}`);
+              }
+              console.log('');
+            } else {
+              spinner.fail(chalk.red(`[-] Bright Data trigger failed (HTTP ${result.statusCode})`));
+              console.log(chalk.red(`    Error: ${result.error}`));
+              if (result.responseData) {
+                console.log(chalk.dim(`    Response Details: ${JSON.stringify(result.responseData)}`));
+              }
+            }
+          } catch (err) {
+            spinner.fail(chalk.red('Failed to execute Bright Data collector trigger.'));
+            console.log(chalk.red(`[-] Error: ${err.message}`));
+          }
+          break;
+        }
+
+        // ──────────────────────────────────────────────
         // REPORT
         // ──────────────────────────────────────────────
         case 'report': {
@@ -1065,6 +1171,9 @@ export function startRepl() {
           console.log(`  ${chalk.yellow('endpoints')}          - Extract hidden REST API routes & WebSockets from JS`);
           console.log(`  ${chalk.yellow('audit')}              - Audit response headers against OWASP guidelines`);
           console.log(`  ${chalk.yellow('report')}             - Generate formatted HTML security audit report`);
+          console.log(chalk.dim('  ── Cloud Collectors & API ──'));
+          console.log(`  ${chalk.yellow('collector trigger')}  - Trigger Bright Data Data Collector for target`);
+          console.log(`  ${chalk.yellow('collector config')}   - Configure default Bright Data API Token & Collector ID`);
           console.log(chalk.dim('  ── Utilities ──'));
           console.log(`  ${chalk.yellow('headers')}            - Fetch target HTTP response headers`);
           console.log(`  ${chalk.yellow('status')}             - Ping target URL for HTTP status`);

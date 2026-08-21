@@ -40,6 +40,7 @@
 | **📄 Security Report Generator** | Export structured HTML security audit reports directly to `~/Downloads` (`report`). |
 | **🌳 Hierarchical ASCII Tree** | Visualize captured DOM & asset structures in tree format (`show`). |
 | **📦 Automatic ZIP Archiving** | Reconstructs offline-compatible HTML/CSS/JS/images directly to `~/Downloads` (`take`, `take -all`). |
+| **⚡ Bright Data Collector** | Trigger Bright Data Data Collector cloud scrapers (`collector trigger`, `collector config`). |
 
 ---
 
@@ -149,6 +150,8 @@ morena
 | `endpoints` | `endpoints` | Extracts hidden REST API routes & WebSockets from JS bundles |
 | `audit` | `audit` | Audits response headers against OWASP guidelines (CSP, CORS, HSTS) |
 | `report` | `report` | Generates formatted HTML security audit report in `~/Downloads` |
+| `collector config` | `collector config <token> <collector_id>` | Configure default Bright Data API token & collector ID for session |
+| `collector trigger` | `collector trigger [collector_id] [url]` | Triggers Bright Data Data Collector DCA job via API |
 | `show` | `show` | Renders a hierarchical ASCII file tree of scraped assets |
 | `session -time`| `session -time` | Displays elapsed session duration since target lock |
 | `info` | `info` | Displays formatted session status card |
